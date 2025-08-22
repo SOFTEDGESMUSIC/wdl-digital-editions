@@ -7,17 +7,13 @@
   <link rel="stylesheet" href="./viewer.css">
 </head>
 <body>
-<div id="mag-root" class="single"><!-- 'single' or 'double' toggled in JS -->
+<div id="mag-root">
   <div id="mag-top"></div>
 
   <div id="mag-viewport">
     <div id="mag-scale" style="transform: scale(1)">
-      <div id="mag-spread">
-        <canvas id="pageL" class="page" hidden></canvas>
-        <canvas id="pageR" class="page"></canvas>
-      </div>
+      <canvas id="mag-page"></canvas>
     </div>
-    <div id="gutter" aria-hidden="true"></div>
   </div>
 
   <div id="thumbs" aria-label="Thumbnails"></div>
@@ -36,7 +32,12 @@
 
       <span class="sep"></span>
 
-      <a id="dl" class="btn" href="#" download>Download</a>
+      <a id="dl" class="btn" href="#" download title="Download PDF">
+        <!-- Download icon -->
+        <svg class="icon" viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M12 3v9m0 0l4-4m-4 4L8 8M5 15v3a3 3 0 003 3h8a3 3 0 003-3v-3" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+      </a>
       <button id="full" class="btn" title="Fullscreen">⤢</button>
     </div>
   </div>
@@ -44,105 +45,64 @@
 
 <script>
 (function(){
-  // -------------------- CONFIG --------------------
+  // --------- CONFIG ----------
   const PAGES_BASE = "https://softedgesmusic.github.io/wdl-digital-editions";
-  // Accept ?pdf=/editions/FILE.pdf – default to latest known path:
   const pdfParam = new URLSearchParams(location.search).get('pdf');
   const PDF_PATH = pdfParam || "/editions/WDL210825Merged.pdf";
   const pdfUrl = (PDF_PATH.startsWith('http') ? PDF_PATH : (PAGES_BASE + PDF_PATH));
 
-  // Your self-hosted PDF.js (already in your repo):
-  const PDFJS_CORE  = PAGES_BASE + "/lib/pdfjs/pdf.min.js";
-  const PDFJS_WORKER= PAGES_BASE + "/lib/pdfjs/pdf.worker.min.js";
+  const PDFJS_CORE   = PAGES_BASE + "/lib/pdfjs/pdf.min.js";
+  const PDFJS_WORKER = PAGES_BASE + "/lib/pdfjs/pdf.worker.min.js";
+  const PAGE_RATIO   = 0.74;                       // width / height (approx newspaper)
+  const SAVE_KEY     = "wdl:lastPage:" + PDF_PATH;
 
-  // Aspect you typically see in your newspaper (width/height)
-  const PAGE_RATIO = 0.74; // adjust if needed
-
-  // LocalStorage key per-PDF (resume)
-  const SAVE_KEY = "wdl:lastPage:" + PDF_PATH;
-
-  // -------------------- DOM --------------------
-  const root   = document.getElementById('mag-root');
+  // --------- DOM ----------
   const viewport = document.getElementById('mag-viewport');
-  const scaleWrap = document.getElementById('mag-scale');
-  const spread = document.getElementById('mag-spread');
-  const pageL = document.getElementById('pageL');
-  const pageR = document.getElementById('pageR');
-  const gutter = document.getElementById('gutter');
-  const thumbs = document.getElementById('thumbs');
+  const scaleWrap= document.getElementById('mag-scale');
+  const pageCv   = document.getElementById('mag-page');
+  const thumbs   = document.getElementById('thumbs');
 
-  const btnPrev = document.getElementById('prev');
-  const btnNext = document.getElementById('next');
-  const pageNo  = document.getElementById('pageNo');
-  const btnIn   = document.getElementById('zoomIn');
-  const btnOut  = document.getElementById('zoomOut');
-  const btnFit  = document.getElementById('fit');
-  const btnFull = document.getElementById('full');
-  const dlLink  = document.getElementById('dl');
+  const btnPrev  = document.getElementById('prev');
+  const btnNext  = document.getElementById('next');
+  const pageNo   = document.getElementById('pageNo');
+  const btnIn    = document.getElementById('zoomIn');
+  const btnOut   = document.getElementById('zoomOut');
+  const btnFit   = document.getElementById('fit');
+  const btnFull  = document.getElementById('full');
+  const dlLink   = document.getElementById('dl');
   dlLink.href = pdfUrl;
 
-  // -------------------- State --------------------
-  let pdfDoc = null, total = 0;
-  let current = 1;              // 1-based PDF page number (left-most visible page or cover)
-  let zoom = 1;                 // CSS scale
-  let fitHeightCache = 1;       // computed "fit to height" scale
-  let rendering = false;
-  let pageThumbs = [];          // data URLs for thumbnails (lazy filled)
+  // --------- State ----------
+  let pdfDoc=null, total=0, current=1;
+  let zoom=1;            // CSS zoom scale
+  let rendering=false;
 
-  // mouse-drag panning when zoomed
+  // drag panning
   let dragging=false, sx=0, sy=0, sl=0, st=0;
 
-  // -------------------- Utils --------------------
-  function clamp(n,a,b){ return Math.max(a, Math.min(b,n)); }
-  function isMobile(){ return matchMedia('(max-width:900px)').matches; }
-  function onCover(){ return current === 1; }
-  function isDouble(){ return !isMobile() && !onCover(); }
+  // --------- Utils ----------
+  const clamp=(n,a,b)=>Math.max(a,Math.min(b,n));
   function visibleHeight(){
-    // Subtract toolbar height and thumbs strip
     const barH = document.getElementById('mag-toolbar').offsetHeight || 48;
     const thH  = document.getElementById('thumbs').offsetHeight || 0;
-    return window.innerHeight - barH - thH - 16; // padding
+    return window.innerHeight - barH - thH - 16;
   }
-  function pageDimsForHeight(h){
-    // Keep aspect ratio; return {w,h}
-    return { h, w: Math.round(h * PAGE_RATIO) };
-  }
-  function updateMode(){
-    root.classList.toggle('single', !isDouble());
-    root.classList.toggle('double',  isDouble());
-    gutter.style.display = isDouble() ? 'block' : 'none';
-    pageL.hidden = !isDouble();
-  }
-  function saveProgress(){
-    try{ localStorage.setItem(SAVE_KEY, String(current)); }catch(_){}
-  }
-  function restoreProgress(){
+  function setPageNo(){ pageNo.textContent = `${current} / ${total}`; }
+  function save(){ try{ localStorage.setItem(SAVE_KEY, String(current)); }catch(_){ } }
+  function restore(){
     try{
       const v = parseInt(localStorage.getItem(SAVE_KEY)||'1',10);
-      if (!Number.isNaN(v) && v>=1 && v<=total) current = v;
+      if (!Number.isNaN(v)) current = clamp(v,1,total);
     }catch(_){}
-  }
-  function setPageNo(){
-    // Display logical current: when double, show right page number; cover shows 1
-    const display = isDouble() ? (current+1) : current;
-    pageNo.textContent = `${display} / ${total}`;
-  }
-  function centerHoriz(){
-    const w = scaleWrap.getBoundingClientRect().width;
-    viewport.scrollLeft = Math.max(0, (w - viewport.clientWidth)/2);
   }
   function applyZoom(){
     scaleWrap.style.transform = `scale(${zoom})`;
-    centerHoriz();
+    // center horizontally:
+    const w = scaleWrap.getBoundingClientRect().width;
+    viewport.scrollLeft = Math.max(0, (w - viewport.clientWidth)/2);
   }
-  function fitToHeight(){
-    // compute CSS scale so the canvas height == visibleHeight
-    const h = visibleHeight();
-    // our canvas is created at that height already; zoom=1 fits it.
-    fitHeightCache = 1; zoom = 1; applyZoom();
-  }
+  function fitToHeight(){ zoom=1; applyZoom(); }
 
-  // -------------------- PDF.js Loader --------------------
   function load(tag, attrs){
     return new Promise((res, rej)=>{
       const el=document.createElement(tag);
@@ -150,33 +110,35 @@
         const v = attrs[k];
         if (v!==undefined && v!==null && v!=='') el.setAttribute(k,v);
       });
-      el.onload = res;
-      el.onerror = ()=>rej(new Error('Load fail: ' + (attrs.src||attrs.href)));
+      el.onload=res;
+      el.onerror=()=>rej(new Error('Load fail: '+(attrs.src||attrs.href)));
       document.head.appendChild(el);
     });
   }
 
+  // --------- PDF init ----------
   async function initPDF(){
+    // load core
     await load('script', {src: PDFJS_CORE});
     if (window.pdfjsLib && window.pdfjsLib.GlobalWorkerOptions){
       window.pdfjsLib.GlobalWorkerOptions.workerSrc = PDFJS_WORKER;
     }
     pdfDoc = await window.pdfjsLib.getDocument({url: pdfUrl}).promise;
-    total = pdfDoc.numPages;
-    restoreProgress();
+    total  = pdfDoc.numPages;
+    restore();
     buildThumbsSkeleton();
-    await renderSpread(); // first paint
-    queueThumbs();
+    await renderCurrent();
     setPageNo();
+    queueThumbs();
   }
 
-  // -------------------- Rendering --------------------
-  async function renderPageToCanvas(n, canvas, targetH, forThumb=false, qualityScale=forThumb?1.2:3){
+  // --------- Rendering ----------
+  async function renderPageToCanvas(n, canvas, targetH, qualityScale=3){
     const page = await pdfDoc.getPage(n);
-    const vp0 = page.getViewport({scale:1});
+    const vp0  = page.getViewport({scale:1});
     const scale = (targetH / vp0.height) * qualityScale * (window.devicePixelRatio||1);
-    const vp = page.getViewport({scale});
-    const ctx = canvas.getContext('2d', {alpha:false});
+    const vp   = page.getViewport({scale});
+    const ctx  = canvas.getContext('2d', {alpha:false});
     canvas.width  = Math.round(vp.width);
     canvas.height = Math.round(vp.height);
     canvas.style.height = Math.round(targetH) + 'px';
@@ -185,128 +147,70 @@
     page.cleanup && page.cleanup();
   }
 
-  async function renderSpread(){
+  async function renderCurrent(){
+    if (!pdfDoc) return;                 // guard for your earlier error
     if (rendering) return;
-    rendering = true;
-    updateMode();
-
+    rendering=true;
     const h = visibleHeight();
-    // cover single (right canvas), otherwise two pages
-    if (!isDouble()){
-      // Single page (cover OR mobile)
-      await renderPageToCanvas(current, pageR, h, false, 3.2);
-      pageL.hidden = true;
-    } else {
-      // Double: left is current, right is current+1
-      const leftN = (current % 2 === 0) ? current : current; // ensure current is even in double view
-      const rightN = leftN + 1;
-      if (leftN < 1) current = 1;
-      if (rightN > total) {
-        // if last page is odd, show single last page (like cover but at end)
-        await renderPageToCanvas(leftN, pageR, h, false, 3.2);
-        pageL.hidden = true;
-      } else {
-        pageL.hidden = false;
-        await Promise.all([
-          renderPageToCanvas(leftN,  pageL, h, false, 3.2),
-          renderPageToCanvas(rightN, pageR, h, false, 3.2),
-        ]);
-      }
-    }
+    await renderPageToCanvas(current, pageCv, h, 3.2);
     fitToHeight();
-    setPageNo();
-    rendering = false;
+    rendering=false;
   }
 
-  // -------------------- Thumbnails --------------------
+  // --------- Thumbnails ----------
   function buildThumbsSkeleton(){
-    thumbs.innerHTML = '';
-    for (let i=1;i<=total;i++){
+    thumbs.innerHTML='';
+    for(let i=1;i<=total;i++){
       const d=document.createElement('div');
-      d.className='thumb';
-      d.dataset.page = String(i);
-      d.title = 'Page ' + i;
-      d.onclick = ()=>goTo(i);
+      d.className='thumb'; d.dataset.page=String(i);
+      d.title='Page '+i;
+      d.onclick=()=>goTo(i);
       thumbs.appendChild(d);
     }
   }
-
   function markActiveThumb(){
-    const active = isDouble() ? (onCover()?1:(current+1)) : current;
     Array.from(thumbs.children).forEach(el=>{
-      el.classList.toggle('active', Number(el.dataset.page) === active);
+      el.classList.toggle('active', Number(el.dataset.page)===current);
     });
   }
-
   function queueThumbs(){
-    // Lazy render thumbnails in small batches
     let p=1;
     const pump = async ()=>{
-      const end = Math.min(p+4, total);
-      for (;p<=end;p++){
+      const end = Math.min(p+4,total);
+      for(;p<=end;p++){
         const el = thumbs.querySelector(`[data-page="${p}"]`);
-        if (!el) continue;
-        // render small offscreen canvas
-        const tmp = document.createElement('canvas');
-        await renderPageToCanvas(p, tmp, 220, true, 1.4);
+        if(!el) continue;
+        const tmp=document.createElement('canvas');
+        // quick thumbnail render:
+        await renderPageToCanvas(p, tmp, 220, 1.4);
         el.style.backgroundImage = `url(${tmp.toDataURL('image/jpeg', .85)})`;
       }
-      if (p<=total) requestIdleCallback(pump, {timeout: 1200});
+      if (p<=total) requestIdleCallback(pump, {timeout:1200});
     };
-    requestIdleCallback(pump, {timeout: 800});
+    requestIdleCallback(pump, {timeout:800});
   }
 
-  // -------------------- Navigation --------------------
-  function normalizeCurrentForDouble(){
-    if (!isDouble()) return;
-    // In double mode, we want left page to be even (so right is odd+1)
-    if (current === 1) return; // cover stays 1
-    if (current % 2 !== 0) current -= 1; // snap to even
-  }
-
+  // --------- Navigation ----------
   async function goTo(n){
-    current = clamp(n, 1, total);
-    if (!isMobile() && current>1) normalizeCurrentForDouble();
-    saveProgress();
-    await renderSpread();
+    current = clamp(n,1,total);
+    save();
+    await renderCurrent();
     markActiveThumb();
+    setPageNo();
   }
+  const next = ()=> goTo(current+1);
+  const prev = ()=> goTo(current-1);
 
-  async function next(){
-    if (isDouble()){
-      // advance by 2 (spread)
-      if (current === 1) current = 2;
-      else current = clamp(current+2, 1, (total%2===0? total-1 : total)); // keep left page valid
-    } else {
-      current = clamp(current+1, 1, total);
-    }
-    await renderSpread();
-    markActiveThumb();
-    saveProgress();
-  }
-  async function prev(){
-    if (isDouble()){
-      if (current === 1) return; // already cover
-      current = clamp(current-2, 1, total);
-    } else {
-      current = clamp(current-1, 1, total);
-    }
-    await renderSpread();
-    markActiveThumb();
-    saveProgress();
-  }
-
-  // Click edges to navigate when not zoomed
+  // click edges to navigate when not zoomed
   viewport.addEventListener('click', (e)=>{
-    if (zoom>1) return; // when zoomed, clicking shouldn’t flip
+    if (zoom>1) return;
     const r = viewport.getBoundingClientRect();
     const x = e.clientX - r.left;
     const edge = Math.min(80, r.width*0.12);
-    if (x<edge) prev();
-    else if (x>r.width-edge) next();
+    if (x<edge) prev(); else if (x>r.width-edge) next();
   });
 
-  // Drag-to-pan when zoomed
+  // drag-to-pan when zoomed
   viewport.addEventListener('mousedown', (e)=>{
     if (zoom<=1) return;
     dragging=true; sx=e.clientX; sy=e.clientY; sl=viewport.scrollLeft; st=viewport.scrollTop;
@@ -322,36 +226,30 @@
   // Controls
   btnPrev.onclick = prev;
   btnNext.onclick = next;
-  btnIn.onclick   = ()=>{ zoom=clamp(zoom+0.2, 1, 3.2); applyZoom(); };
-  btnOut.onclick  = ()=>{ zoom=clamp(zoom-0.2, 1, 3.2); applyZoom(); };
+  btnIn.onclick   = ()=>{ zoom=clamp(zoom+0.2,1,3.2); applyZoom(); };
+  btnOut.onclick  = ()=>{ zoom=clamp(zoom-0.2,1,3.2); applyZoom(); };
   btnFit.onclick  = ()=>{ zoom=1; applyZoom(); };
   btnFull.onclick = ()=>{
-    const el = document.fullscreenElement;
-    (el ? document.exitFullscreen() : document.documentElement.requestFullscreen());
+    document.fullscreenElement ? document.exitFullscreen() : document.documentElement.requestFullscreen();
   };
 
-  // Resize
-  window.addEventListener('resize', ()=>{
-    // Re-render to fit new height (for crispness), keep same logical page(s)
-    renderSpread().then(()=>{ centerHoriz(); });
-  });
-
-  // Keyboard: arrows and +/-/0
+  // Keyboard shortcuts
   window.addEventListener('keydown', (e)=>{
     if (e.key==='ArrowRight') next();
     else if (e.key==='ArrowLeft') prev();
-    else if (e.key==='+') { zoom=clamp(zoom+0.2, 1, 3.2); applyZoom(); }
-    else if (e.key==='-') { zoom=clamp(zoom-0.2, 1, 3.2); applyZoom(); }
+    else if (e.key==='+') { zoom=clamp(zoom+0.2,1,3.2); applyZoom(); }
+    else if (e.key==='-') { zoom=clamp(zoom-0.2,1,3.2); applyZoom(); }
     else if (e.key==='0') { zoom=1; applyZoom(); }
   });
 
-  // Boot
-  load('script', {src: PDFJS_CORE})
-    .then(()=>initPDF())
-    .catch(err=>{
-      console.error('PDF init failed', err);
-      document.body.innerHTML = '<p style="padding:2rem;text-align:center">Unable to load PDF viewer.</p>';
-    });
+  // Resize -> re-render for clean fit
+  window.addEventListener('resize', ()=>{ renderCurrent().then(()=>applyZoom()); });
+
+  // --------- Boot (important: only once) ----------
+  initPDF().catch(err=>{
+    console.error('PDF init failed', err);
+    document.body.innerHTML = '<p style="padding:2rem;text-align:center">Unable to load PDF viewer.</p>';
+  });
 })();
 </script>
 </body>
