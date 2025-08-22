@@ -1,26 +1,22 @@
 :root{
   --bg:#ffffff; --fg:#111; --muted:#666;
-  --brand:#0a0;            /* tweak for your green accent */
+  --brand:#0a0;
   --barH:48px; --barW: min(560px, 36vw);
-  --thumbH: 92px;          /* thumbnail height */
-  --shadow: rgba(0,0,0,.22);
+  --thumbH: 92px;
 }
 
 *{box-sizing:border-box}
-
 html,body{height:100%}
 body{
   margin:0; background:var(--bg); color:var(--fg);
-  font: 14px/1.4 system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial;
+  font:14px/1.4 system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial;
 }
 
 /* Shell */
 #mag-root{display:flex; flex-direction:column; min-height:100vh}
 
-/* Top strip (brand) */
-#mag-top{
-  height: 10px; background:#fff; /* matches site; set to transparent if you like */
-}
+/* Thin top strip to match site background */
+#mag-top{height:10px; background:#fff}
 
 /* Viewport */
 #mag-viewport{
@@ -29,29 +25,13 @@ body{
 }
 
 /* Zoom target lives inside viewport */
-#mag-scale{
-  transform-origin: 50% 0;
-}
+#mag-scale{ transform-origin: 50% 0 }
 
-/* Spread container */
-#mag-spread{
-  display:flex; gap:12px; align-items:flex-start; justify-content:center;
-  margin: 12px auto 8px;
-  max-width: 100%;
-}
-
-/* Individual page canvases */
-.page{
-  background:#fff; box-shadow: 0 2px 18px rgba(0,0,0,.06);
-  border-radius: 0;
-}
-
-/* Gutter shadow only when two-page */
-#gutter{
-  position:absolute; top:0; bottom:var(--barH); left:50%; width:64px;
-  transform:translateX(-50%); pointer-events:none; opacity:.35;
-  background:linear-gradient(90deg, rgba(0,0,0,0) 0%, var(--shadow) 50%, rgba(0,0,0,0) 100%);
-  display:none;
+/* Single page canvas, centered */
+#mag-page{
+  display:block; margin: 12px auto 8px;
+  background:#fff; box-shadow:0 2px 18px rgba(0,0,0,.06);
+  border-radius:0;
 }
 
 /* Toolbar (bottom center) */
@@ -60,25 +40,25 @@ body{
   display:flex; justify-content:center; padding:8px 0 10px;
   background:linear-gradient(to top, rgba(255,255,255,.95), rgba(255,255,255,.85) 40%, transparent);
 }
-
 #bar{
   height:var(--barH); width: var(--barW);
-  background:#fff; color:#000; border-radius: 10px;
-  box-shadow: 0 3px 14px rgba(0,0,0,.08);
+  background:#fff; color:#000; border-radius:10px;
+  box-shadow:0 3px 14px rgba(0,0,0,.08);
   display:flex; align-items:center; padding:6px 8px; gap:8px;
 }
 
 .btn{
   background:#fff; color:#000; border:0; border-radius:8px;
   padding:.45rem .6rem; cursor:pointer; user-select:none;
+  display:inline-flex; align-items:center; gap:.4rem;
 }
 .btn:hover{ background:#f2f2f2 }
 .btn[disabled]{opacity:.5; cursor:not-allowed}
 
+.icon{width:18px; height:18px; display:inline-block}
+
 .sep{flex:1 1 auto}
 #pageNo{min-width:64px; text-align:center; color:#000; font-weight:600}
-#dl{ text-decoration:none; color:#000; background:#fff; padding:.45rem .6rem; border-radius:8px}
-#dl:hover{ background:#f2f2f2 }
 
 /* Thumbnails strip */
 #thumbs{
@@ -87,17 +67,13 @@ body{
   background:#fff;
 }
 .thumb{
-  height: var(--thumbH); aspect-ratio: 0.74/1; /* newspaper page aspect */
+  height: var(--thumbH); aspect-ratio: 0.74/1;
   background:#f7f7f7 center/cover no-repeat; border:1px solid #ddd; border-radius:4px;
   cursor:pointer; flex:0 0 auto; position:relative;
 }
 .thumb.active{ outline:2px solid var(--brand); border-color:transparent }
 
-/* Mobile: single page always; toolbar wider */
-@media (max-width: 900px){
+/* Mobile: wider toolbar */
+@media (max-width:900px){
   :root{ --barW: 92vw; }
 }
-
-/* Hide gutter when single page (CSS helper class) */
-.single #gutter{ display:none !important; }
-.double #gutter{ display:block; }
