@@ -103,3 +103,42 @@ html, body {
   text-align: center;
   font-size: 14px;
 }
+/* (keep all your existing CSS above) */
+
+/* Thumbnails */
+#thumbstrip {
+  position: fixed;
+  bottom: 80px;
+  left: 0;
+  right: 0;
+  display: flex;
+  overflow-x: auto;
+  gap: 6px;
+  padding: 6px;
+  background: #f4f4f4;
+  border-top: 1px solid #ddd;
+  transition: max-height 0.3s ease;
+}
+
+#thumbstrip canvas {
+  cursor: pointer;
+  border: 2px solid transparent;
+}
+#thumbstrip canvas:hover {
+  border-color: #0a0;
+}
+
+/* Mobile: collapse thumbs */
+@media (max-width: 768px) {
+  #thumbstrip {
+    max-height: 0;
+    overflow: hidden;
+    padding: 0;
+    border-top: none;
+  }
+  #thumbstrip.show {
+    max-height: 120px; /* reveal when toggled */
+    padding: 6px;
+    border-top: 1px solid #ddd;
+  }
+}
