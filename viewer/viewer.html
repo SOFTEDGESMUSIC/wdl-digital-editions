@@ -1,281 +1,176 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="utf-8"/>
-  <meta name="viewport" content="width=device-width,initial-scale=1"/>
-  <title>WDL Digital Edition</title>
-  <link rel="stylesheet" href="./viewer.css">
+  <meta charset="UTF-8">
+  <title>WDL PDF Viewer</title>
+  <style>
+    html, body {
+      margin:0; padding:0;
+      height:100%; width:100%;
+      background:#fff; overflow:hidden;
+      font-family: sans-serif;
+    }
+    #viewer {
+      position:absolute; top:0; left:0; right:0; bottom:40px;
+      display:flex; justify-content:center; align-items:center;
+      overflow:auto;
+      background:#fff;
+    }
+    #scaleWrap {
+      transform-origin: center center;
+      transition: transform 0.25s;
+    }
+    canvas { display:block; margin:auto; }
+
+    /* Control bar */
+    #toolbar {
+      position:absolute; bottom:0; left:50%;
+      transform:translateX(-50%);
+      background:#fff; color:#000;
+      display:flex; gap:10px; align-items:center;
+      padding:6px 12px;
+      border-radius:4px;
+      width:33%;
+      justify-content:center;
+    }
+    #toolbar button {
+      background:none; border:none;
+      font-size:16px; cursor:pointer;
+    }
+    #toolbar .spacer { flex:1; }
+
+    /* Thumbnails */
+    #thumbs {
+      position:absolute; top:0; left:0; right:0;
+      display:flex; gap:4px; overflow-x:auto;
+      padding:4px; background:#fff;
+      border-bottom:1px solid #ddd;
+      height:90px; box-sizing:border-box;
+    }
+    #thumbs canvas { height:80px; cursor:pointer; }
+
+    /* Loading overlay */
+    #loadingOverlay {
+      position:absolute; inset:0;
+      display:flex; align-items:center; justify-content:center;
+      background:rgba(255,255,255,.9);
+      font-size:1.2rem; color:#333;
+      z-index:99;
+    }
+  </style>
 </head>
 <body>
-<div id="mag-root">
-  <div id="mag-top"></div>
-
-  <div id="mag-viewport">
-    <div id="mag-scale" style="transform: scale(1)">
-      <canvas id="mag-page"></canvas>
-    </div>
+  <div id="thumbs"></div>
+  <div id="viewer"><div id="scaleWrap"><canvas id="pageCv"></canvas></div></div>
+  <div id="toolbar">
+    <button id="prev">⟨</button>
+    <span id="pageNum">1</span>/<span id="pageCount">?</span>
+    <button id="next">⟩</button>
+    <div class="spacer"></div>
+    <button id="zoomOut">−</button>
+    <button id="zoomIn">＋</button>
+    <button id="fit">⤢</button>
+    <a id="download" href="#" download title="Download PDF">⬇</a>
   </div>
-
-  <div id="thumbs" aria-label="Thumbnails"></div>
-
-  <div id="mag-toolbar">
-    <div id="bar">
-      <button id="prev" class="btn" title="Previous page">◀</button>
-      <div id="pageNo">1 / 1</div>
-      <button id="next" class="btn" title="Next page">▶</button>
-
-      <span class="sep"></span>
-
-      <button id="zoomOut" class="btn" title="Zoom out">−</button>
-      <button id="fit" class="btn" title="Fit to height">Fit</button>
-      <button id="zoomIn" class="btn" title="Zoom in">+</button>
-
-      <span class="sep"></span>
-
-      <a id="dl" class="btn" href="#" download title="Download PDF">
-        <svg class="icon" viewBox="0 0 24 24" aria-hidden="true">
-          <path d="M12 3v9m0 0l4-4m-4 4L8 8M5 15v3a3 3 0 003 3h8a3 3 0 003-3v-3"
-                fill="none" stroke="currentColor" stroke-width="2"
-                stroke-linecap="round" stroke-linejoin="round"/>
-        </svg>
-      </a>
-      <button id="full" class="btn" title="Fullscreen">⤢</button>
-    </div>
-  </div>
-</div>
+  <div id="loadingOverlay">Loading PDF…</div>
 
 <script>
-(function(){
-  // ------------ CONFIG ------------
-  const PAGES_BASE = "https://softedgesmusic.github.io/wdl-digital-editions";
-  const pdfParam = new URLSearchParams(location.search).get('pdf');
-  const PDF_PATH = pdfParam || "/editions/WDL210825Merged.pdf";
-  const pdfUrl = PDF_PATH.startsWith('http') ? PDF_PATH : (PAGES_BASE + PDF_PATH);
+const pdfUrl = new URLSearchParams(location.search).get("pdf") 
+  || "/editions/WDL210825Merged.pdf";
 
-  const PDFJS_CORE   = PAGES_BASE + "/lib/pdfjs/pdf.min.js";
-  const PDFJS_WORKER = PAGES_BASE + "/lib/pdfjs/pdf.worker.min.js";
-  const PAGE_RATIO   = 0.74;                 // width / height (approx)
-  const SAVE_KEY     = "wdl:lastPage:" + PDF_PATH;
+const PDFJS_CORE   = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.2.67/pdf.min.js";
+const PDFJS_WORKER = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.2.67/pdf.worker.min.js";
 
-  // ------------ DOM ------------
-  const viewport = document.getElementById('mag-viewport');
-  const scaleWrap= document.getElementById('mag-scale');
-  const pageCv   = document.getElementById('mag-page');
-  const thumbs   = document.getElementById('thumbs');
+let pdfDoc, current=1, total=0;
+let zoom=1.0;
+const viewer = document.getElementById('viewer');
+const scaleWrap = document.getElementById('scaleWrap');
+const pageCv = document.getElementById('pageCv');
+const ctx = pageCv.getContext('2d');
+const pageNum = document.getElementById('pageNum');
+const pageCount = document.getElementById('pageCount');
+const thumbs = document.getElementById('thumbs');
+const overlay = document.getElementById('loadingOverlay');
 
-  const btnPrev  = document.getElementById('prev');
-  const btnNext  = document.getElementById('next');
-  const pageNo   = document.getElementById('pageNo');
-  const btnIn    = document.getElementById('zoomIn');
-  const btnOut   = document.getElementById('zoomOut');
-  const btnFit   = document.getElementById('fit');
-  const btnFull  = document.getElementById('full');
-  const dlLink   = document.getElementById('dl');
-  dlLink.href = pdfUrl;
-
-  // ------------ State ------------
-  let pdfDoc=null, total=0, current=1;
-  let zoom=1;                      // CSS zoom scale
-  let rendering=false;
-
-  // drag panning
-  let dragging=false, sx=0, sy=0, sl=0, st=0;
-
-  // ------------ Utils ------------
-  const clamp=(n,a,b)=>Math.max(a,Math.min(b,n));
-  function visibleHeight(){
-    const barH = document.getElementById('mag-toolbar').offsetHeight || 48;
-    const thH  = document.getElementById('thumbs').offsetHeight || 0;
-    return window.innerHeight - barH - thH - 16;
-  }
-  function setPageNo(){ pageNo.textContent = `${current} / ${total}`; }
-  function save(){ try{ localStorage.setItem(SAVE_KEY, String(current)); }catch(_){ } }
-  function restore(){
-    try{
-      const v = parseInt(localStorage.getItem(SAVE_KEY)||'1',10);
-      if (!Number.isNaN(v)) current = clamp(v,1,total);
-    }catch(_){}
-  }
-  function applyZoom(){
-    scaleWrap.style.transform = `scale(${zoom})`;
-    // center horizontally
-    const w = scaleWrap.getBoundingClientRect().width;
-    viewport.scrollLeft = Math.max(0, (w - viewport.clientWidth)/2);
-  }
-  function fitToHeight(){ zoom=1; applyZoom(); }
-
-  function load(tag, attrs){
-    return new Promise((res, rej)=>{
-      const el=document.createElement(tag);
-      Object.keys(attrs).forEach(k=>{
-        const v = attrs[k];
-        if (v!==undefined && v!==null && v!=='') el.setAttribute(k,v);
-      });
-      el.onload=res;
-      el.onerror=()=>rej(new Error('Load fail: '+(attrs.src||attrs.href)));
-      document.head.appendChild(el);
+// utility loader
+function load(tag, attrs){
+  return new Promise((res,rej)=>{
+    const el=document.createElement(tag);
+    Object.keys(attrs).forEach(k=>{
+      if(attrs[k]!==undefined) {el[k]=attrs[k]; el.setAttribute(k,attrs[k]);}
     });
-  }
-
-  // ------------ PDF boot ------------
-  async function ensurePDFReady(){
-    // 1) HEAD check to catch 404/mime early (prevents null pdfDoc)
-    try{
-      const ok = await fetch(pdfUrl, {method:'HEAD'}).then(r=>r.ok);
-      if(!ok) throw new Error('PDF not reachable: ' + pdfUrl);
-    }catch(err){
-      throw new Error('PDF fetch failed: '+ err.message);
-    }
-
-    // 2) Load pdf.js core then set worker and open doc
-    await load('script', {src: PDFJS_CORE});
-    if (!(window.pdfjsLib && window.pdfjsLib.getDocument)){
-      throw new Error('pdfjsLib missing after load');
-    }
-    if (window.pdfjsLib.GlobalWorkerOptions){
-      window.pdfjsLib.GlobalWorkerOptions.workerSrc = PDFJS_WORKER;
-    }
-    pdfDoc = await window.pdfjsLib.getDocument({url: pdfUrl}).promise;
-    total  = pdfDoc.numPages;
-    restore();                          // set current from localStorage
-  }
-
-  // ------------ Rendering (single page) ------------
-  async function renderPageToCanvas(n, canvas, targetH, qualityScale=3){
-    if (!pdfDoc) return;                // hard guard (prevents getPage of null)
-    const page = await pdfDoc.getPage(n);
-    const vp0  = page.getViewport({scale:1});
-    const scale = (targetH / vp0.height) * qualityScale * (window.devicePixelRatio||1);
-    const vp   = page.getViewport({scale});
-    const ctx  = canvas.getContext('2d', {alpha:false});
-    canvas.width  = Math.round(vp.width);
-    canvas.height = Math.round(vp.height);
-    canvas.style.height = Math.round(targetH) + 'px';
-    canvas.style.width  = Math.round(targetH * PAGE_RATIO) + 'px';
-    await page.render({canvasContext:ctx, viewport:vp}).promise;
-    page.cleanup && page.cleanup();
-  }
-
-  async function renderCurrent(){
-    if (!pdfDoc) return;                // guard: only render after ensurePDFReady
-    if (rendering) return;
-    rendering=true;
-    const h = visibleHeight();
-    await renderPageToCanvas(current, pageCv, h, 3.2);
-    fitToHeight();
-    rendering=false;
-  }
-
-  // ------------ Thumbnails ------------
-  function buildThumbsSkeleton(){
-    thumbs.innerHTML='';
-    for(let i=1;i<=total;i++){
-      const d=document.createElement('div');
-      d.className='thumb'; d.dataset.page=String(i);
-      d.title='Page '+i;
-      d.onclick=()=>goTo(i);
-      thumbs.appendChild(d);
-    }
-  }
-  function markActiveThumb(){
-    Array.from(thumbs.children).forEach(el=>{
-      el.classList.toggle('active', Number(el.dataset.page)===current);
-    });
-    // auto-scroll strip so active stays in view
-    const active = thumbs.querySelector('.thumb.active');
-    if (active){
-      const r = active.getBoundingClientRect();
-      const t = thumbs.getBoundingClientRect();
-      if (r.left < t.left) thumbs.scrollLeft -= (t.left - r.left + 10);
-      if (r.right > t.right) thumbs.scrollLeft += (r.right - t.right + 10);
-    }
-  }
-  function queueThumbs(){
-    let p=1;
-    const pump = async ()=>{
-      const end = Math.min(p+4,total);
-      for(;p<=end;p++){
-        const el = thumbs.querySelector(`[data-page="${p}"]`);
-        if(!el) continue;
-        const tmp=document.createElement('canvas');
-        await renderPageToCanvas(p, tmp, 220, 1.4); // quick
-        el.style.backgroundImage = `url(${tmp.toDataURL('image/jpeg', .85)})`;
-      }
-      if (p<=total) requestIdleCallback(pump, {timeout:1200});
-    };
-    requestIdleCallback(pump, {timeout:800});
-  }
-
-  // ------------ Navigation & zoom ------------
-  async function goTo(n){
-    current = clamp(n,1,total);
-    save();
-    await renderCurrent();
-    markActiveThumb();
-    setPageNo();
-  }
-  const next = ()=> goTo(current+1);
-  const prev = ()=> goTo(current-1);
-
-  // click edges to navigate when not zoomed
-  viewport.addEventListener('click', (e)=>{
-    if (zoom>1) return;
-    const r = viewport.getBoundingClientRect();
-    const x = e.clientX - r.left;
-    const edge = Math.min(80, r.width*0.12);
-    if (x<edge) prev(); else if (x>r.width-edge) next();
+    el.onload=res; el.onerror=()=>rej(new Error("Load failed "+attrs.src));
+    document.head.appendChild(el);
   });
+}
 
-  // drag-to-pan when zoomed
-  viewport.addEventListener('mousedown', (e)=>{
-    if (zoom<=1) return;
-    dragging=true; sx=e.clientX; sy=e.clientY; sl=viewport.scrollLeft; st=viewport.scrollTop;
-    viewport.style.cursor='grabbing'; e.preventDefault();
-  });
-  window.addEventListener('mousemove', (e)=>{
-    if(!dragging) return;
-    viewport.scrollLeft = sl - (e.clientX - sx);
-    viewport.scrollTop  = st - (e.clientY - sy);
-  });
-  window.addEventListener('mouseup', ()=>{ dragging=false; viewport.style.cursor='default'; });
+// Zoom + centering
+function applyZoom(){
+  scaleWrap.style.transform = `scale(${zoom})`;
+  const vp = viewer;
+  const contentW = scaleWrap.getBoundingClientRect().width;
+  const contentH = scaleWrap.getBoundingClientRect().height;
+  vp.scrollLeft = Math.max(0,(contentW - vp.clientWidth)/2);
+  vp.scrollTop  = Math.max(0,(contentH - vp.clientHeight)/2);
+}
 
-  // Controls
-  btnPrev.onclick = prev;
-  btnNext.onclick = next;
-  btnIn.onclick   = ()=>{ zoom=clamp(zoom+0.2,1,3.2); applyZoom(); };
-  btnOut.onclick  = ()=>{ zoom=clamp(zoom-0.2,1,3.2); applyZoom(); };
-  btnFit.onclick  = ()=>{ zoom=1; applyZoom(); };
-  btnFull.onclick = ()=>{
-    document.fullscreenElement ? document.exitFullscreen() : document.documentElement.requestFullscreen();
-  };
+// Render page
+async function renderPageToCanvas(num, canvas, maxHeight, scaleFactor){
+  const page = await pdfDoc.getPage(num);
+  const vport = page.getViewport({scale:1});
+  const scale = (maxHeight/vport.height)*scaleFactor;
+  const viewport = page.getViewport({scale});
+  canvas.width=viewport.width;
+  canvas.height=viewport.height;
+  await page.render({canvasContext:canvas.getContext('2d'), viewport}).promise;
+}
 
-  // Keyboard shortcuts
-  window.addEventListener('keydown', (e)=>{
-    if (e.key==='ArrowRight') next();
-    else if (e.key==='ArrowLeft') prev();
-    else if (e.key==='+') { zoom=clamp(zoom+0.2,1,3.2); applyZoom(); }
-    else if (e.key==='-') { zoom=clamp(zoom-0.2,1,3.2); applyZoom(); }
-    else if (e.key==='0') { zoom=1; applyZoom(); }
-  });
+// Render main + thumbs
+async function renderCurrent(){
+  overlay.style.display="flex";
+  await renderPageToCanvas(current,pageCv,viewer.clientHeight-100,1.0);
+  overlay.style.display="none";
+  fitToHeight();
+  pageNum.textContent=current;
+}
+async function renderThumbs(){
+  thumbs.innerHTML="";
+  for(let i=1;i<=total;i++){
+    const c=document.createElement("canvas");
+    thumbs.appendChild(c);
+    renderPageToCanvas(i,c,80,0.2);
+    c.onclick=()=>{current=i;renderCurrent();}
+  }
+}
 
-  // Resize -> re-render for clean fit
-  window.addEventListener('resize', ()=>{ renderCurrent().then(()=>applyZoom()); });
+// Fit to height
+function fitToHeight(){
+  zoom=(viewer.clientHeight-100)/pageCv.height;
+  applyZoom();
+}
 
-  // ------------ Boot (strict order) ------------
-  (async ()=>{
-    try{
-      await ensurePDFReady();          // sets pdfDoc & total
-      buildThumbsSkeleton();
-      setPageNo();
-      await renderCurrent();
-      markActiveThumb();
-      queueThumbs();
-    }catch(err){
-      console.error('Viewer boot failed:', err);
-      document.body.innerHTML = '<p style="padding:2rem;text-align:center">Unable to load PDF viewer.</p>';
-    }
-  })();
+// Boot
+(async function(){
+  overlay.textContent="Loading PDF.js…";
+  await load("script",{src:PDFJS_CORE});
+  if(window.pdfjsLib && window.pdfjsLib.GlobalWorkerOptions){
+    window.pdfjsLib.GlobalWorkerOptions.workerSrc=PDFJS_WORKER;
+  }
+  overlay.textContent="Parsing document…";
+  pdfDoc=await window.pdfjsLib.getDocument({url:pdfUrl}).promise;
+  total=pdfDoc.numPages;
+  pageCount.textContent=total;
+  document.getElementById('download').href=pdfUrl;
+  await renderCurrent();
+  renderThumbs();
 })();
+
+// Toolbar actions
+document.getElementById('prev').onclick=()=>{if(current>1){current--;renderCurrent();}};
+document.getElementById('next').onclick=()=>{if(current<total){current++;renderCurrent();}};
+document.getElementById('zoomIn').onclick=()=>{zoom*=1.2;applyZoom();};
+document.getElementById('zoomOut').onclick=()=>{zoom/=1.2;applyZoom();};
+document.getElementById('fit').onclick=()=>{fitToHeight();};
 </script>
 </body>
 </html>
