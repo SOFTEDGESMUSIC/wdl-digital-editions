@@ -1,116 +1,57 @@
-:root {
-  --bg: #fff;
-  --fg: #111;
-  --barW: min(560px, 36vw);
-  --barH: 46px;
-  --shadow: rgba(0, 0, 0, 0.07);
+:root{
+  --bg:#fff; --fg:#111;
+  --barH:46px; --barW: 38rem;
 }
 
-*,
-*:before,
-*:after {
-  box-sizing: border-box;
+html, body { height:100%; margin:0; background:var(--bg); color:var(--fg); font:14px/1.4 system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial; }
+
+#wdl-app{ display:flex; flex-direction:column; min-height:100vh; }
+
+#wdl-toolbar{
+  position:sticky; top:0; z-index:10;
+  height:var(--barH);
+  margin:0 auto;
+  width:min(90vw, var(--barW));
+  display:flex; align-items:center; gap:.5rem; justify-content:center;
+  background:#fff; color:#000; border-radius:10px;
+  box-shadow:0 6px 20px rgba(0,0,0,.06);
+  margin-top:.5rem; padding:0 .5rem;
+}
+#wdl-toolbar .spacer{ flex:1 }
+#wdl-toolbar button, #wdl-toolbar a{
+  background:#fff; color:#000; border:0; border-radius:8px;
+  padding:.4rem .6rem; cursor:pointer; text-decoration:none;
+}
+#wdl-toolbar button:hover, #wdl-toolbar a:hover{ background:#f2f2f2; }
+
+#wdl-stage{
+  flex:1 1 auto; display:flex; align-items:stretch; justify-content:center;
+  padding:.5rem 0 1rem;
 }
 
-html,
-body {
-  height: 100%;
-  margin: 0;
-  background: var(--bg);
-  color: var(--fg);
-  font: 14px/1.4 system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial,
-    sans-serif;
+#viewport{
+  position:relative;
+  width:min(1400px, 96vw);
+  height:calc(100vh - var(--barH) - 2.25rem);
+  overflow:auto;
+  background:#fff;
+  border-radius:10px;
+  box-shadow:0 2px 12px rgba(0,0,0,.05) inset;
+  margin:0 auto;
+  cursor:default;
 }
 
-#app {
-  display: grid;
-  grid-template-rows: 1fr auto auto;
-  min-height: 100vh;
+canvas#pdfCanvas{ display:block; margin:0 auto; background:#fff; }
+.textLayer{
+  position:absolute; left:50%; transform:translateX(-50%);
+  top:0; pointer-events:none; color:transparent; /* PDF.js draws positioned text divs */
 }
 
-#stage {
-  /* the scrollable viewing area */
-  position: relative;
-  overflow: auto;
-  width: 100%;
-  height: calc(100vh - var(--barH) - 12px);
-  display: grid;
-  place-items: center;
-  background: var(--bg);
-}
+/* Status */
+#wdl-status{ text-align:center; padding:.5rem 0 .75rem; color:#555; }
 
-#pageCanvas {
-  display: block;
-  /* soft drop shadow around the page */
-  box-shadow: 0 8px 24px var(--shadow);
-  background: #fff; /* page color */
-}
-
-#toolbar {
-  position: sticky;
-  bottom: 6px;
-  margin: 6px auto;
-  width: var(--barW);
-  height: var(--barH);
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  justify-content: center;
-  background: #fff;
-  color: #000;
-  border-radius: 10px;
-  box-shadow: 0 6px 20px var(--shadow);
-  padding: 0 8px;
-}
-
-#toolbar .spacer {
-  flex: 1 1 auto;
-}
-
-#toolbar button,
-#toolbar a {
-  appearance: none;
-  border: 0;
-  background: #fff;
-  color: #000;
-  border-radius: 8px;
-  padding: 6px 10px;
-  cursor: pointer;
-  text-decoration: none;
-  font-weight: 600;
-}
-
-#toolbar button:hover,
-#toolbar a:hover {
-  background: #f2f2f2;
-}
-
-#pageBox {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-}
-
-#pageInput {
-  width: 56px;
-  padding: 6px 8px;
-  border: 1px solid #ddd;
-  border-radius: 6px;
-  text-align: right;
-}
-
-#status {
-  text-align: center;
-  padding: 4px 0 8px;
-  color: #666;
-}
-
-/* Mobile tweaks */
-@media (max-width: 900px) {
-  :root {
-    --barW: 92vw;
-  }
-  #pageInput {
-    width: 48px;
-  }
+/* Mobile toolbar width */
+@media (max-width: 800px){
+  :root{ --barW: 95vw; }
+  #viewport{ width: 98vw; }
 }
