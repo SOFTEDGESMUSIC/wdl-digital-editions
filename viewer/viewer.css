@@ -14,8 +14,6 @@ body{
 
 /* Shell */
 #mag-root{display:flex; flex-direction:column; min-height:100vh}
-
-/* Thin top strip to match site background */
 #mag-top{height:10px; background:#fff}
 
 /* Viewport */
@@ -26,8 +24,6 @@ body{
 
 /* Zoom target lives inside viewport */
 #mag-scale{ transform-origin: 50% 0 }
-
-/* Single page canvas, centered */
 #mag-page{
   display:block; margin: 12px auto 8px;
   background:#fff; box-shadow:0 2px 18px rgba(0,0,0,.06);
@@ -46,7 +42,6 @@ body{
   box-shadow:0 3px 14px rgba(0,0,0,.08);
   display:flex; align-items:center; padding:6px 8px; gap:8px;
 }
-
 .btn{
   background:#fff; color:#000; border:0; border-radius:8px;
   padding:.45rem .6rem; cursor:pointer; user-select:none;
@@ -54,7 +49,6 @@ body{
 }
 .btn:hover{ background:#f2f2f2 }
 .btn[disabled]{opacity:.5; cursor:not-allowed}
-
 .icon{width:18px; height:18px; display:inline-block}
 
 .sep{flex:1 1 auto}
@@ -73,7 +67,7 @@ body{
 }
 .thumb.active{ outline:2px solid var(--brand); border-color:transparent }
 
-/* Mobile: wider toolbar */
+/* Mobile */
 @media (max-width:900px){
   :root{ --barW: 92vw; }
 }
