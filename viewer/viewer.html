@@ -20,13 +20,12 @@
   <button id="zoom-in">+</button>
   <button id="zoom-fit">⤢</button>
   <button id="fullscreen">[ ]</button>
-  <button id="toggle-thumbs">🖼️</button>
   <a id="openpdf" target="_blank">📄</a>
 </div>
 
 <script>
 const url = new URLSearchParams(location.search).get("pdf") || 
-  "/editions/WDL210825Merged.pdf";
+  "https://softedgesmusic.github.io/wdl-digital-editions/editions/WDL210825Merged.pdf";
 
 const viewer = document.getElementById("viewer");
 const pageInfo = document.getElementById("page-info");
@@ -40,6 +39,7 @@ let pdfDoc=null, current=1, total=0, zoom=1.0;
 let canvas=document.createElement("canvas"), ctx=canvas.getContext("2d");
 viewer.appendChild(canvas);
 
+// Loading bar
 function setProgress(p){
   progress.style.width=(p*100)+"%";
 }
@@ -56,17 +56,9 @@ async function renderPage(num){
   await page.render({canvasContext:ctx,viewport}).promise;
   pageInfo.textContent=`${num} / ${total}`;
   setProgress(1);
-  highlightThumb(num);
 }
 
-// Highlight current thumbnail
-function highlightThumb(num){
-  [...thumbstrip.querySelectorAll("canvas")].forEach((c,i)=>{
-    c.classList.toggle("active", i+1===num);
-  });
-}
-
-// Build thumbnails
+// Thumbnails
 async function buildThumbs(){
   for(let i=1;i<=total;i++){
     const page=await pdfDoc.getPage(i);
@@ -95,11 +87,6 @@ document.getElementById("zoom-fit").onclick=()=>{zoom=1.0;renderPage(current);};
 document.getElementById("fullscreen").onclick=()=>{
   if(document.fullscreenElement){document.exitFullscreen();}
   else{document.documentElement.requestFullscreen();}
-};
-
-// Toggle thumbnails on mobile
-document.getElementById("toggle-thumbs").onclick = () => {
-  thumbstrip.classList.toggle("show");
 };
 
 // Double-tap zoom for mobile
