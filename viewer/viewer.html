@@ -4,254 +4,274 @@
   <meta charset="utf-8" />
   <meta
     name="viewport"
-    content="width=device-width, initial-scale=1, viewport-fit=cover"
-  />
-  <title>WDL PDF Viewer</title>
-  <link rel="stylesheet" href="./viewer.css" />
+    content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>WDL Viewer</title>
 
-  <!-- PDF.js (you already host these) -->
-  <script defer src="https://softedgesmusic.github.io/wdl-digital-editions/lib/pdfjs/pdf.min.js"></script>
-  <script defer src="https://softedgesmusic.github.io/wdl-digital-editions/lib/pdfjs/pdf.worker.min.js"></script>
+  <!-- Your minimal viewer styles -->
+  <link rel="stylesheet" href="../viewer/viewer.css" />
+
+  <!-- PDF.js (self-hosted) -->
+  <script src="../lib/pdfjs/pdf.min.js"></script>
+  <script>
+    // point PDF.js worker at your self-hosted worker
+    if (window.pdfjsLib && window.pdfjsLib.GlobalWorkerOptions) {
+      pdfjsLib.GlobalWorkerOptions.workerSrc = "../lib/pdfjs/pdf.worker.min.js";
+    }
+  </script>
 </head>
 <body>
-  <div id="app">
-    <div id="stage">
-      <canvas id="pageCanvas"></canvas>
-    </div>
-
-    <div id="toolbar" role="toolbar" aria-label="PDF controls">
-      <button id="prev" title="Previous page">◀</button>
-
-      <span id="pageBox">
-        <input id="pageInput" type="number" min="1" step="1" />
-        <span id="pageTotal">/ 1</span>
-      </span>
-
-      <button id="next" title="Next page">▶</button>
+  <div id="wdl-app">
+    <div id="wdl-toolbar">
+      <button id="btnPrev" title="Previous page">◀</button>
+      <span id="pageInfo"><span id="pageNum">1</span>/<span id="pageCount">1</span></span>
+      <button id="btnNext" title="Next page">▶</button>
 
       <span class="spacer"></span>
 
-      <button id="zoomOut" title="Zoom out">−</button>
-      <button id="zoomFitW" title="Fit to width">Fit W</button>
-      <button id="zoomFitH" title="Fit to height">Fit H</button>
-      <button id="zoomIn" title="Zoom in">+</button>
+      <button id="btnZoomOut" title="Zoom out">−</button>
+      <button id="btnFit" title="Fit to height">Fit</button>
+      <button id="btnZoomIn" title="Zoom in">+</button>
 
       <span class="spacer"></span>
 
-      <a id="download" href="#" download>Download</a>
+      <a id="btnDownload" href="#" download>Download</a>
+      <button id="btnFull" title="Fullscreen">⤢</button>
     </div>
 
-    <div id="status" aria-live="polite"></div>
+    <div id="wdl-stage">
+      <!-- scrollable viewport -->
+      <div id="viewport">
+        <!-- canvas + selectable text layer -->
+        <canvas id="pdfCanvas"></canvas>
+        <div id="textLayer" class="textLayer"></div>
+      </div>
+    </div>
+
+    <div id="wdl-status" aria-live="polite">Loading…</div>
   </div>
 
   <script>
-    (function () {
-      // ---------- Config ----------
-      // URL param: ?file=<absolute-or-relative-URL-to-PDF>
-      // Example iframe:  viewer.html?file=/wdl-digital-editions/editions/WDL210825Merged.pdf
-      const params = new URLSearchParams(location.search);
-      const pdfUrl =
-        params.get("file") ||
-        "https://softedgesmusic.github.io/wdl-digital-editions/editions/WDL210825Merged.pdf";
+  (function () {
+    const params = new URLSearchParams(location.search);
+    let file = params.get("file"); // e.g. /wdl-digital-editions/editions/WDL210825Merged.pdf
 
-      // Wire the download link
-      document.getElementById("download").href = pdfUrl;
-
-      // ---------- Elements ----------
-      const canvas = document.getElementById("pageCanvas");
-      const ctx = canvas.getContext("2d", { alpha: false });
-      const stage = document.getElementById("stage");
-      const statusEl = document.getElementById("status");
-
-      const prevBtn = document.getElementById("prev");
-      const nextBtn = document.getElementById("next");
-      const zoomInBtn = document.getElementById("zoomIn");
-      const zoomOutBtn = document.getElementById("zoomOut");
-      const fitWBtn = document.getElementById("zoomFitW");
-      const fitHBtn = document.getElementById("zoomFitH");
-
-      const pageInput = document.getElementById("pageInput");
-      const pageTotal = document.getElementById("pageTotal");
-
-      // ---------- PDF.js setup ----------
-      const pdfjsLib = window["pdfjs-dist/build/pdf"];
-      // (Worker already auto-set by the script tag; this is a safe guard)
-      if (pdfjsLib && pdfjsLib.GlobalWorkerOptions) {
-        pdfjsLib.GlobalWorkerOptions.workerSrc =
-          "https://softedgesmusic.github.io/wdl-digital-editions/lib/pdfjs/pdf.worker.min.js";
-      }
-
-      // ---------- State ----------
-      let pdfDoc = null;
-      let currentPage = 1;
-      let zoom = 1;                 // logical zoom multiplier (1 = “fit” baseline we calculate)
-      let fitBaseline = 1;          // computed scale to fit width/height
-      let fitMode = "width";        // "width" | "height"
-      let rendering = false;
-      let rerenderPending = false;
-
-      // DPR – crisp text on HiDPI
-      const DPR = Math.max(1, window.devicePixelRatio || 1);
-
-      function setStatus(t) {
-        statusEl.textContent = t || "";
-      }
-
-      function clamp(n, a, b) {
-        return Math.max(a, Math.min(b, n));
-      }
-
-      function getViewportScaleForFit(page, mode) {
-        // Compute scale so that the rendered CSS size fits stage’s inner box.
-        const stageW = stage.clientWidth;
-        const stageH = stage.clientHeight;
-        const vp1 = page.getViewport({ scale: 1 });
-        const sw = stageW / vp1.width;
-        const sh = stageH / vp1.height;
-        return mode === "height" ? sh : sw;
-      }
-
-      async function renderPage() {
-        if (!pdfDoc) return;
-        if (rendering) {
-          rerenderPending = true;
-          return;
+    // If no ?file=, try to read /latest.json at repo root (one level up from /viewer/)
+    async function resolveFileIfMissing() {
+      if (file) return file;
+      try {
+        const r = await fetch("../latest.json", { cache: "no-store" });
+        const meta = await r.json();
+        if (meta && meta.pdf) {
+          // allow "editions/xxx.pdf" or "/editions/xxx.pdf"
+          return meta.pdf.startsWith("/")
+            ? meta.pdf
+            : "../" + meta.pdf;
         }
-        rendering = true;
+      } catch (e) {
+        console.warn("latest.json not found or invalid", e);
+      }
+      throw new Error("No PDF specified (add ?file=… or provide latest.json).");
+    }
 
-        try {
-          const page = await pdfDoc.getPage(currentPage);
+    // DOM
+    const E = (id) => document.getElementById(id);
+    const els = {
+      stage: E("wdl-stage"),
+      view: E("viewport"),
+      canvas: E("pdfCanvas"),
+      textLayer: E("textLayer"),
+      status: E("wdl-status"),
+      btnPrev: E("btnPrev"),
+      btnNext: E("btnNext"),
+      btnZoomIn: E("btnZoomIn"),
+      btnZoomOut: E("btnZoomOut"),
+      btnFit: E("btnFit"),
+      btnFull: E("btnFull"),
+      pageNum: E("pageNum"),
+      pageCount: E("pageCount"),
+      btnDownload: E("btnDownload"),
+    };
 
-          // Recompute baseline scale (fit to width/height) every render,
-          // then apply user zoom on top. This keeps resize behavior intuitive.
-          const base = getViewportScaleForFit(page, fitMode);
-          fitBaseline = base;
-          const scale = base * zoom;
+    const DPR = Math.max(1, window.devicePixelRatio || 1);
+    let pdfDoc = null;
+    let currentPage = 1;
+    let pageCount = 1;
+    let fitScale = 1;       // scale that fits height
+    let scale = 1;          // actual render scale (zooms around fitScale)
+    let rendering = false;
+    let pendingPage = null;
 
-          const vp = page.getViewport({ scale: scale * DPR });
-          canvas.width = Math.floor(vp.width);
-          canvas.height = Math.floor(vp.height);
+    function setStatus(s) { els.status.textContent = s; }
 
-          // CSS size (display size) should be device-independent
-          canvas.style.width = Math.floor(vp.width / DPR) + "px";
-          canvas.style.height = Math.floor(vp.height / DPR) + "px";
+    function clamp(n, a, b) { return Math.max(a, Math.min(b, n)); }
 
-          setStatus("Rendering…");
-          await page.render({ canvasContext: ctx, viewport: vp }).promise;
-          setStatus("");
-        } catch (e) {
-          console.error(e);
-          setStatus("Failed to render page.");
-        } finally {
-          rendering = false;
-          if (rerenderPending) {
-            rerenderPending = false;
-            renderPage();
-          }
-        }
+    function setDownloadHref(url) {
+      els.btnDownload.href = url;
+    }
+
+    // Compute the "fit to height" scale so the whole page fits vertically
+    async function computeFitScale(page) {
+      const viewport1 = page.getViewport({ scale: 1 });
+      const viewH = els.view.clientHeight || window.innerHeight * 0.8;
+      fitScale = (viewH) / viewport1.height;
+      // Start a touch sharper than perfect fit
+      fitScale *= 1.02;
+      scale = fitScale;
+    }
+
+    async function renderPage(num) {
+      rendering = true;
+      setStatus(`Rendering page ${num}…`);
+
+      const page = await pdfDoc.getPage(num);
+
+      // If this is the first render or after resize, compute fit scale
+      if (!fitScale) await computeFitScale(page);
+
+      const viewport = page.getViewport({ scale: scale * DPR });
+
+      // Canvas setup
+      const ctx = els.canvas.getContext("2d", { alpha: false });
+      els.canvas.width = Math.floor(viewport.width);
+      els.canvas.height = Math.floor(viewport.height);
+      els.canvas.style.width = Math.floor(viewport.width / DPR) + "px";
+      els.canvas.style.height = Math.floor(viewport.height / DPR) + "px";
+
+      // Clear and size text layer
+      els.textLayer.innerHTML = "";
+      els.textLayer.style.width = els.canvas.style.width;
+      els.textLayer.style.height = els.canvas.style.height;
+
+      // Render page to canvas
+      await page.render({ canvasContext: ctx, viewport }).promise;
+
+      // Render selectable text layer (crisp vector glyphs)
+      if (pdfjsLib.renderTextLayer) {
+        const textContent = await page.getTextContent();
+        await pdfjsLib.renderTextLayer({
+          textContent,
+          container: els.textLayer,
+          viewport: page.getViewport({ scale: scale }), // textLayer uses CSS pixels (no DPR)
+          textDivs: [],
+          enhanceTextSelection: true,
+        }).promise;
       }
 
-      async function loadPdf() {
-        setStatus("Loading PDF…");
-        pdfDoc = await pdfjsLib.getDocument({ url: pdfUrl }).promise;
-        pageTotal.textContent = "/ " + pdfDoc.numPages;
-        currentPage = clamp(currentPage, 1, pdfDoc.numPages);
-        pageInput.value = currentPage;
-        setStatus("");
-        renderPage();
+      // update UI
+      els.pageNum.textContent = String(num);
+      rendering = false;
+      setStatus("Ready");
+
+      // handle queued page
+      if (pendingPage !== null) {
+        const p = pendingPage; pendingPage = null;
+        queueRender(p);
       }
+    }
 
-      // ---------- Controls ----------
-      prevBtn.onclick = () => {
-        if (!pdfDoc) return;
-        currentPage = clamp(currentPage - 1, 1, pdfDoc.numPages);
-        pageInput.value = currentPage;
-        renderPage();
-      };
+    function queueRender(num) {
+      if (rendering) {
+        pendingPage = num;
+      } else {
+        renderPage(num);
+      }
+    }
 
-      nextBtn.onclick = () => {
-        if (!pdfDoc) return;
-        currentPage = clamp(currentPage + 1, 1, pdfDoc.numPages);
-        pageInput.value = currentPage;
-        renderPage();
-      };
+    function changePage(delta) {
+      const target = clamp(currentPage + delta, 1, pageCount);
+      if (target !== currentPage) {
+        currentPage = target;
+        queueRender(currentPage);
+      }
+    }
 
-      pageInput.onchange = () => {
-        if (!pdfDoc) return;
-        currentPage = clamp(parseInt(pageInput.value || "1", 10), 1, pdfDoc.numPages);
-        pageInput.value = currentPage;
-        renderPage();
-      };
+    // Zoom around the current center
+    function setZoom(newScale) {
+      newScale = clamp(newScale, fitScale * 0.5, fitScale * 5);
+      if (Math.abs(newScale - scale) < 0.001) return;
 
-      zoomInBtn.onclick = () => {
-        zoom = clamp(zoom * 1.2, 0.2, 8);
-        renderPage();
-      };
+      // keep visual center position stable
+      const rect = els.view.getBoundingClientRect();
+      const cx = els.view.scrollLeft + rect.width / 2;
+      const cy = els.view.scrollTop + rect.height / 2;
+      const relX = cx / (parseFloat(els.canvas.style.width) || 1);
+      const relY = cy / (parseFloat(els.canvas.style.height) || 1);
 
-      zoomOutBtn.onclick = () => {
-        zoom = clamp(zoom / 1.2, 0.2, 8);
-        renderPage();
-      };
+      scale = newScale;
+      queueRender(currentPage);
 
-      fitWBtn.onclick = () => {
-        fitMode = "width";
-        zoom = 1;
-        renderPage();
-      };
+      // after render completes, scroll back near same relative point
+      setTimeout(() => {
+        const w = parseFloat(els.canvas.style.width) || 0;
+        const h = parseFloat(els.canvas.style.height) || 0;
+        els.view.scrollLeft = Math.max(0, w * relX - rect.width / 2);
+        els.view.scrollTop = Math.max(0, h * relY - rect.height / 2);
+      }, 0);
+    }
 
-      fitHBtn.onclick = () => {
-        fitMode = "height";
-        zoom = 1;
-        renderPage();
-      };
+    // Fit to height (respect toolbar)
+    function fitToHeight() {
+      fitScale = 0; // force recompute on next render
+      queueRender(currentPage);
+    }
 
-      // Ctrl/Cmd + wheel to zoom, plain wheel to scroll
-      stage.addEventListener(
-        "wheel",
-        (e) => {
-          if (e.ctrlKey || e.metaKey) {
-            e.preventDefault();
-            const delta = Math.sign(e.deltaY);
-            zoom = clamp(zoom * (delta > 0 ? 1 / 1.1 : 1.1), 0.2, 8);
-            renderPage();
-          }
-        },
-        { passive: false }
-      );
+    // Mouse wheel zoom (Ctrl/⌘ + wheel)
+    els.view.addEventListener("wheel", (e) => {
+      if (e.ctrlKey || e.metaKey) {
+        e.preventDefault();
+        const dir = e.deltaY > 0 ? -1 : 1;
+        const step = scale * (dir > 0 ? 0.1 : -0.1);
+        setZoom(scale + step);
+      }
+    }, { passive: false });
 
-      // Keyboard shortcuts
-      window.addEventListener("keydown", (e) => {
-        if (!pdfDoc) return;
-        if (e.key === "ArrowRight" || e.key === "PageDown") nextBtn.click();
-        if (e.key === "ArrowLeft" || e.key === "PageUp") prevBtn.click();
-        if ((e.ctrlKey || e.metaKey) && (e.key === "+" || e.key === "=")) {
-          zoomInBtn.click();
-          e.preventDefault();
-        }
-        if ((e.ctrlKey || e.metaKey) && e.key === "-") {
-          zoomOutBtn.click();
-          e.preventDefault();
-        }
-        if (e.key === "0" && (e.ctrlKey || e.metaKey)) {
-          zoom = 1;
-          renderPage();
-          e.preventDefault();
-        }
-      });
+    // Drag-to-pan
+    let drag = false, sx = 0, sy = 0, sl = 0, st = 0;
+    els.view.addEventListener("mousedown", (e) => {
+      drag = true; sx = e.clientX; sy = e.clientY; sl = els.view.scrollLeft; st = els.view.scrollTop;
+      els.view.style.cursor = "grabbing";
+      e.preventDefault();
+    });
+    window.addEventListener("mousemove", (e) => {
+      if (!drag) return;
+      els.view.scrollLeft = sl - (e.clientX - sx);
+      els.view.scrollTop  = st - (e.clientY - sy);
+    });
+    window.addEventListener("mouseup", () => { drag = false; els.view.style.cursor = "default"; });
 
-      // Handle resize (debounced)
-      let rAF = 0;
-      window.addEventListener("resize", () => {
-        cancelAnimationFrame(rAF);
-        rAF = requestAnimationFrame(renderPage);
-      });
+    // Buttons
+    els.btnPrev.onclick = () => changePage(-1);
+    els.btnNext.onclick = () => changePage(1);
+    els.btnZoomIn.onclick  = () => setZoom(scale * 1.15);
+    els.btnZoomOut.onclick = () => setZoom(scale / 1.15);
+    els.btnFit.onclick = fitToHeight;
+    els.btnFull.onclick = () => {
+      document.fullscreenElement ? document.exitFullscreen() : document.documentElement.requestFullscreen();
+    };
 
-      // Start
-      loadPdf().catch((err) => {
+    // Resize → keep “fit to height” behaviour
+    window.addEventListener("resize", () => fitToHeight());
+
+    // Boot
+    (async () => {
+      try {
+        const resolved = await resolveFileIfMissing();
+        // If they passed a relative path like "/editions/…", make it relative to this html
+        const absolute = resolved.startsWith("http") ? resolved : new URL(resolved, location.href).href;
+        setDownloadHref(absolute);
+
+        setStatus("Loading…");
+        pdfDoc = await pdfjsLib.getDocument({ url: absolute }).promise;
+        pageCount = pdfDoc.numPages;
+        els.pageCount.textContent = String(pageCount);
+        currentPage = 1;
+        fitToHeight(); // will queue render
+      } catch (err) {
         console.error(err);
         setStatus("Failed to load PDF.");
-      });
+      }
     })();
+  })();
   </script>
 </body>
 </html>
