@@ -6,6 +6,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no"/>
 <link rel="stylesheet" href="viewer.css"/>
 <script src="https://softedgesmusic.github.io/wdl-digital-editions/lib/pdfjs/pdf.min.js"></script>
+<script src="https://softedgesmusic.github.io/wdl-digital-editions/lib/pdfjs/pdf.worker.min.js"></script>
 </head>
 <body>
 <div id="progress"></div>
@@ -19,25 +20,14 @@
   <button id="zoom-in">+</button>
   <button id="zoom-fit">⤢</button>
   <button id="fullscreen">[ ]</button>
-  <a id="openpdf" target="_blank" rel="noopener">📄</a>
+  <button id="toggle-thumbs">🖼️</button>
+  <a id="openpdf" target="_blank">📄</a>
 </div>
 
 <script>
-// --- Fix URL handling ---
-const pdfParam = new URLSearchParams(location.search).get("pdf");
-const url = pdfParam
-  ? (pdfParam.startsWith("http")
-      ? pdfParam
-      : "/wdl-digital-editions" + (pdfParam.startsWith("/") ? pdfParam : "/" + pdfParam))
-  : "/wdl-digital-editions/editions/WDL210825Merged.pdf";
+const url = new URLSearchParams(location.search).get("pdf") || 
+  "/editions/WDL210825Merged.pdf";
 
-console.log("[WDL] Loading PDF:", url);
-
-// --- PDF.js worker path ---
-pdfjsLib.GlobalWorkerOptions.workerSrc =
-  "https://softedgesmusic.github.io/wdl-digital-editions/lib/pdfjs/pdf.worker.min.js";
-
-// --- Elements ---
 const viewer = document.getElementById("viewer");
 const pageInfo = document.getElementById("page-info");
 const progress = document.getElementById("progress");
@@ -46,14 +36,10 @@ const openpdf = document.getElementById("openpdf");
 
 openpdf.href = url;
 
-// --- State ---
 let pdfDoc=null, current=1, total=0, zoom=1.0;
 let canvas=document.createElement("canvas"), ctx=canvas.getContext("2d");
-viewer.style.display="flex"; 
-viewer.style.justifyContent="center"; 
 viewer.appendChild(canvas);
 
-// Loading bar
 function setProgress(p){
   progress.style.width=(p*100)+"%";
 }
@@ -61,19 +47,26 @@ function setProgress(p){
 // Render page
 async function renderPage(num){
   const page=await pdfDoc.getPage(num);
-  const vw=viewer.clientWidth, vh=window.innerHeight-120; // subtract controls
-  const scale=Math.min(
-    vw/page.getViewport({scale:1}).width,
-    vh/page.getViewport({scale:1}).height
-  ) * zoom;
+  const vw=viewer.clientWidth, vh=viewer.clientHeight-80;
+  const scale=Math.min(vw/page.getViewport({scale:1}).width,
+                       vh/page.getViewport({scale:1}).height)*zoom;
   const viewport=page.getViewport({scale});
   canvas.width=viewport.width; canvas.height=viewport.height;
+  viewer.scrollLeft=0; viewer.scrollTop=0;
   await page.render({canvasContext:ctx,viewport}).promise;
   pageInfo.textContent=`${num} / ${total}`;
   setProgress(1);
+  highlightThumb(num);
 }
 
-// Thumbnails
+// Highlight current thumbnail
+function highlightThumb(num){
+  [...thumbstrip.querySelectorAll("canvas")].forEach((c,i)=>{
+    c.classList.toggle("active", i+1===num);
+  });
+}
+
+// Build thumbnails
 async function buildThumbs(){
   for(let i=1;i<=total;i++){
     const page=await pdfDoc.getPage(i);
@@ -91,8 +84,6 @@ pdfjsLib.getDocument(url).promise.then(doc=>{
   pdfDoc=doc; total=doc.numPages;
   buildThumbs();
   renderPage(current);
-}).catch(e=>{
-  console.error("Flipbook failed:", e);
 });
 
 // Controls
@@ -106,12 +97,17 @@ document.getElementById("fullscreen").onclick=()=>{
   else{document.documentElement.requestFullscreen();}
 };
 
+// Toggle thumbnails on mobile
+document.getElementById("toggle-thumbs").onclick = () => {
+  thumbstrip.classList.toggle("show");
+};
+
 // Double-tap zoom for mobile
 let lastTap=0;
 viewer.addEventListener("touchend",e=>{
   const now=Date.now();
   if(now-lastTap<300 && e.changedTouches.length===1){
-    zoom=(Math.abs(zoom-1.0)<0.05)?2.0:1.0;
+    if(Math.abs(zoom-1.0)<0.05){zoom=2.0;}else{zoom=1.0;}
     renderPage(current);
   }
   lastTap=now;
