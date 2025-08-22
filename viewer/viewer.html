@@ -1,188 +1,113 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <title>WDL PDF Viewer</title>
-  <style>
-    html, body {
-      margin:0; padding:0;
-      height:100%; width:100%;
-      background:#fff; overflow:hidden;
-      font-family: sans-serif;
-    }
-    #viewer {
-      position:absolute; top:90px; left:0; right:0; bottom:40px;
-      display:flex; justify-content:center; align-items:center;
-      overflow:auto;
-      background:#fff;
-      touch-action:none; /* allows custom pinch/swipe */
-    }
-    #scaleWrap { transform-origin: 0 0; }
-    canvas { display:block; margin:auto; }
-
-    #toolbar {
-      position:absolute; bottom:0; left:50%;
-      transform:translateX(-50%);
-      background:#fff; color:#000;
-      display:flex; gap:10px; align-items:center;
-      padding:6px 12px; border-radius:4px;
-      width:33%; justify-content:center;
-    }
-    #toolbar button, #toolbar a {
-      background:none; border:none; font-size:16px;
-      cursor:pointer; text-decoration:none; color:#000;
-    }
-    #thumbs {
-      position:absolute; top:0; left:0; right:0;
-      display:flex; gap:4px; overflow-x:auto;
-      padding:4px; background:#fff;
-      border-bottom:1px solid #ddd; height:90px;
-      box-sizing:border-box;
-    }
-    #thumbs canvas { height:80px; cursor:pointer; }
-    #loadingOverlay {
-      position:absolute; inset:0;
-      display:flex; align-items:center; justify-content:center;
-      background:rgba(255,255,255,.9); font-size:1.2rem; color:#333;
-      z-index:99;
-    }
-  </style>
+<meta charset="utf-8"/>
+<title>WDL Viewer</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no"/>
+<link rel="stylesheet" href="viewer.css"/>
+<script src="https://softedgesmusic.github.io/wdl-digital-editions/lib/pdfjs/pdf.min.js"></script>
+<script src="https://softedgesmusic.github.io/wdl-digital-editions/lib/pdfjs/pdf.worker.min.js"></script>
 </head>
 <body>
-  <div id="thumbs"></div>
-  <div id="viewer"><div id="scaleWrap"><canvas id="pageCv"></canvas></div></div>
-  <div id="toolbar">
-    <button id="prev">⟨</button>
-    <span id="pageNum">1</span>/<span id="pageCount">?</span>
-    <button id="next">⟩</button>
-    <div class="spacer"></div>
-    <button id="zoomOut">−</button>
-    <button id="zoomIn">＋</button>
-    <button id="fit">⤢</button>
-    <a id="openPdf" href="#" target="_blank" title="Open PDF">📄</a>
-  </div>
-  <div id="loadingOverlay">Loading PDF…</div>
+<div id="progress"></div>
+<div id="viewer"></div>
+<div id="thumbstrip"></div>
+<div id="controls">
+  <button id="prev">⟨</button>
+  <span id="page-info">1 / ?</span>
+  <button id="next">⟩</button>
+  <button id="zoom-out">−</button>
+  <button id="zoom-in">+</button>
+  <button id="zoom-fit">⤢</button>
+  <button id="fullscreen">[ ]</button>
+  <a id="openpdf" target="_blank">📄</a>
+</div>
 
 <script>
-const pdfUrl = new URLSearchParams(location.search).get("pdf") 
-  || "/editions/WDL210825Merged.pdf";
+const url = new URLSearchParams(location.search).get("pdf") || 
+  "/editions/WDL210825Merged.pdf";
 
-const CORE   = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.2.67/pdf.min.js";
-const WORKER = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.2.67/pdf.worker.min.js";
+const viewer = document.getElementById("viewer");
+const pageInfo = document.getElementById("page-info");
+const progress = document.getElementById("progress");
+const thumbstrip = document.getElementById("thumbstrip");
+const openpdf = document.getElementById("openpdf");
 
-let pdfDoc, current=1, total=0;
-let zoom=1.0;
-const viewer = document.getElementById('viewer');
-const scaleWrap = document.getElementById('scaleWrap');
-const pageCv = document.getElementById('pageCv');
-const ctx = pageCv.getContext('2d');
-const pageNum = document.getElementById('pageNum');
-const pageCount = document.getElementById('pageCount');
-const thumbs = document.getElementById('thumbs');
-const overlay = document.getElementById('loadingOverlay');
+openpdf.href = url;
 
-document.getElementById("openPdf").href = pdfUrl;
+let pdfDoc=null, current=1, total=0, zoom=1.0;
+let canvas=document.createElement("canvas"), ctx=canvas.getContext("2d");
+viewer.appendChild(canvas);
 
-function load(tag, attrs){
-  return new Promise((res,rej)=>{
-    const el=document.createElement(tag);
-    Object.keys(attrs).forEach(k=>{ if(attrs[k]!=null) {el[k]=attrs[k]; el.setAttribute(k,attrs[k]);}});
-    el.onload=res; el.onerror=()=>rej(new Error("Load failed "+attrs.src));
-    document.head.appendChild(el);
-  });
+// Loading bar
+function setProgress(p){
+  progress.style.width=(p*100)+"%";
 }
 
-function applyZoom(centerX, centerY){
-  const beforeW = scaleWrap.getBoundingClientRect().width;
-  const beforeH = scaleWrap.getBoundingClientRect().height;
-  const scrollL = viewer.scrollLeft;
-  const scrollT = viewer.scrollTop;
-  const relX = centerX ? (centerX+scrollL)/beforeW : 0.5;
-  const relY = centerY ? (centerY+scrollT)/beforeH : 0.5;
-
-  scaleWrap.style.transform = `scale(${zoom})`;
-
-  const afterW = scaleWrap.getBoundingClientRect().width;
-  const afterH = scaleWrap.getBoundingClientRect().height;
-  viewer.scrollLeft = relX*afterW - viewer.clientWidth/2;
-  viewer.scrollTop  = relY*afterH - viewer.clientHeight/2;
-}
-
+// Render page
 async function renderPage(num){
-  overlay.style.display="flex";
-  const page = await pdfDoc.getPage(num);
-  const viewport = page.getViewport({scale:1.5});
-  pageCv.width = viewport.width;
-  pageCv.height = viewport.height;
-  await page.render({canvasContext:ctx, viewport}).promise;
-  overlay.style.display="none";
-  zoom= (viewer.clientHeight-100)/pageCv.height;
-  applyZoom();
-  pageNum.textContent=current;
+  const page=await pdfDoc.getPage(num);
+  const vw=viewer.clientWidth, vh=viewer.clientHeight-80;
+  const scale=Math.min(vw/page.getViewport({scale:1}).width,
+                       vh/page.getViewport({scale:1}).height)*zoom;
+  const viewport=page.getViewport({scale});
+  canvas.width=viewport.width; canvas.height=viewport.height;
+  viewer.scrollLeft=0; viewer.scrollTop=0;
+  await page.render({canvasContext:ctx,viewport}).promise;
+  pageInfo.textContent=`${num} / ${total}`;
+  setProgress(1);
 }
-async function renderThumbs(){
-  thumbs.innerHTML="";
+
+// Thumbnails
+async function buildThumbs(){
   for(let i=1;i<=total;i++){
+    const page=await pdfDoc.getPage(i);
+    const vp=page.getViewport({scale:0.15});
     const c=document.createElement("canvas");
-    thumbs.appendChild(c);
-    const p=await pdfDoc.getPage(i);
-    const v=p.getViewport({scale:0.15});
-    c.width=v.width; c.height=v.height;
-    p.render({canvasContext:c.getContext("2d"), viewport:v});
-    c.onclick=()=>{current=i;renderPage(current);}
+    c.width=vp.width; c.height=vp.height;
+    await page.render({canvasContext:c.getContext("2d"),viewport:vp}).promise;
+    c.onclick=()=>{current=i; renderPage(current);};
+    thumbstrip.appendChild(c);
   }
 }
 
-(async function(){
-  overlay.textContent="Loading PDF.js…";
-  await load("script",{src:CORE});
-  if(window.pdfjsLib && window.pdfjsLib.GlobalWorkerOptions){
-    window.pdfjsLib.GlobalWorkerOptions.workerSrc=WORKER;
-  }
-  pdfDoc=await window.pdfjsLib.getDocument({url:pdfUrl}).promise;
-  total=pdfDoc.numPages;
-  pageCount.textContent=total;
-  await renderPage(current);
-  renderThumbs();
-})();
-
-document.getElementById('prev').onclick=()=>{if(current>1){current--;renderPage(current);}};
-document.getElementById('next').onclick=()=>{if(current<total){current++;renderPage(current);}};
-
-document.getElementById('zoomIn').onclick=(e)=>{zoom*=1.2;applyZoom(e.clientX,e.clientY);};
-document.getElementById('zoomOut').onclick=(e)=>{zoom/=1.2;applyZoom(e.clientX,e.clientY);};
-document.getElementById('fit').onclick=()=>{zoom=(viewer.clientHeight-100)/pageCv.height;applyZoom();};
-
-// Mobile gestures
-let touchStartX, touchStartY, pinchDist=0;
-viewer.addEventListener("touchstart", e=>{
-  if(e.touches.length===1){touchStartX=e.touches[0].clientX; touchStartY=e.touches[0].clientY;}
-  if(e.touches.length===2){
-    const dx=e.touches[0].clientX-e.touches[1].clientX;
-    const dy=e.touches[0].clientY-e.touches[1].clientY;
-    pinchDist=Math.hypot(dx,dy);
-  }
+// Load PDF
+pdfjsLib.getDocument(url).promise.then(doc=>{
+  pdfDoc=doc; total=doc.numPages;
+  buildThumbs();
+  renderPage(current);
 });
-viewer.addEventListener("touchend", e=>{
-  if(e.touches.length===0 && touchStartX!=null){
-    const dx=(e.changedTouches[0].clientX-touchStartX);
-    if(dx>80 && current>1){current--;renderPage(current);}
-    else if(dx<-80 && current<total){current++;renderPage(current);}
-    touchStartX=null;
+
+// Controls
+document.getElementById("prev").onclick=()=>{if(current>1){current--;renderPage(current);}};
+document.getElementById("next").onclick=()=>{if(current<total){current++;renderPage(current);}};
+document.getElementById("zoom-in").onclick=()=>{zoom*=1.2;renderPage(current);};
+document.getElementById("zoom-out").onclick=()=>{zoom/=1.2;renderPage(current);};
+document.getElementById("zoom-fit").onclick=()=>{zoom=1.0;renderPage(current);};
+document.getElementById("fullscreen").onclick=()=>{
+  if(document.fullscreenElement){document.exitFullscreen();}
+  else{document.documentElement.requestFullscreen();}
+};
+
+// Double-tap zoom for mobile
+let lastTap=0;
+viewer.addEventListener("touchend",e=>{
+  const now=Date.now();
+  if(now-lastTap<300 && e.changedTouches.length===1){
+    if(Math.abs(zoom-1.0)<0.05){zoom=2.0;}else{zoom=1.0;}
+    renderPage(current);
   }
+  lastTap=now;
 });
-viewer.addEventListener("touchmove", e=>{
-  if(e.touches.length===2){
-    const dx=e.touches[0].clientX-e.touches[1].clientX;
-    const dy=e.touches[0].clientY-e.touches[1].clientY;
-    const newDist=Math.hypot(dx,dy);
-    const factor=newDist/pinchDist;
-    zoom*=factor;
-    pinchDist=newDist;
-    applyZoom((e.touches[0].clientX+e.touches[1].clientX)/2,(e.touches[0].clientY+e.touches[1].clientY)/2);
+
+// Wheel zoom (desktop)
+viewer.addEventListener("wheel",e=>{
+  if(e.ctrlKey){
     e.preventDefault();
+    zoom*=e.deltaY<0?1.1:0.9;
+    renderPage(current);
   }
-},{passive:false});
+});
 </script>
 </body>
 </html>
