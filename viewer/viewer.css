@@ -1,73 +1,26 @@
-:root{
-  --bg:#ffffff; --fg:#111; --muted:#666;
-  --brand:#0a0;
-  --barH:48px; --barW: min(560px, 36vw);
-  --thumbH: 92px;
+body {
+  margin:0; background:#fff; color:#000; font-family:sans-serif;
+  display:flex; flex-direction:column; height:100vh; overflow:hidden;
 }
-
-*{box-sizing:border-box}
-html,body{height:100%}
-body{
-  margin:0; background:var(--bg); color:var(--fg);
-  font:14px/1.4 system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial;
+#progress {
+  height:4px; background:#4caf50; width:0; transition:width 0.2s;
 }
-
-/* Shell */
-#mag-root{display:flex; flex-direction:column; min-height:100vh}
-#mag-top{height:10px; background:#fff}
-
-/* Viewport */
-#mag-viewport{
-  position:relative; flex:1 1 auto; min-height:0;
-  overflow:auto; background:var(--bg);
+#viewer {
+  flex:1; display:flex; justify-content:center; align-items:center;
+  overflow:auto; background:#fff;
 }
-
-/* Zoom target lives inside viewport */
-#mag-scale{ transform-origin: 50% 0 }
-#mag-page{
-  display:block; margin: 12px auto 8px;
-  background:#fff; box-shadow:0 2px 18px rgba(0,0,0,.06);
-  border-radius:0;
+#viewer canvas { max-width:100%; height:auto; }
+#thumbstrip {
+  display:flex; overflow-x:auto; background:#eee; padding:4px;
 }
-
-/* Toolbar (bottom center) */
-#mag-toolbar{
-  position:sticky; bottom:0; z-index:5;
-  display:flex; justify-content:center; padding:8px 0 10px;
-  background:linear-gradient(to top, rgba(255,255,255,.95), rgba(255,255,255,.85) 40%, transparent);
+#thumbstrip canvas { margin-right:4px; cursor:pointer; border:1px solid #ccc; }
+#controls {
+  background:#fff; color:#000; display:flex; justify-content:center;
+  align-items:center; gap:10px; padding:6px;
+  width:33%; margin:0 auto;
 }
-#bar{
-  height:var(--barH); width: var(--barW);
-  background:#fff; color:#000; border-radius:10px;
-  box-shadow:0 3px 14px rgba(0,0,0,.08);
-  display:flex; align-items:center; padding:6px 8px; gap:8px;
+#controls button,#controls a {
+  background:none; border:none; font-size:18px; cursor:pointer; color:#000;
+  text-decoration:none;
 }
-.btn{
-  background:#fff; color:#000; border:0; border-radius:8px;
-  padding:.45rem .6rem; cursor:pointer; user-select:none;
-  display:inline-flex; align-items:center; gap:.4rem;
-}
-.btn:hover{ background:#f2f2f2 }
-.btn[disabled]{opacity:.5; cursor:not-allowed}
-.icon{width:18px; height:18px; display:inline-block}
-
-.sep{flex:1 1 auto}
-#pageNo{min-width:64px; text-align:center; color:#000; font-weight:600}
-
-/* Thumbnails strip */
-#thumbs{
-  height: calc(var(--thumbH) + 14px);
-  display:flex; gap:10px; overflow:auto; padding:8px 10px; border-top:1px solid #eee;
-  background:#fff;
-}
-.thumb{
-  height: var(--thumbH); aspect-ratio: 0.74/1;
-  background:#f7f7f7 center/cover no-repeat; border:1px solid #ddd; border-radius:4px;
-  cursor:pointer; flex:0 0 auto; position:relative;
-}
-.thumb.active{ outline:2px solid var(--brand); border-color:transparent }
-
-/* Mobile */
-@media (max-width:900px){
-  :root{ --barW: 92vw; }
-}
+#controls button:hover,#controls a:hover { color:#4caf50; }
