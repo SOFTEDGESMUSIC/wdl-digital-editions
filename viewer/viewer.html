@@ -21,16 +21,24 @@
   </div>
 </div>
 
-<div id="controls">
-  <button id="prev"      title="Previous page">⟨</button>
-  <span id="page-info">1 / ?</span>
-  <button id="next"      title="Next page">⟩</button>
-  <button id="zoom-out"  title="Zoom out">−</button>
-  <button id="zoom-in"   title="Zoom in">+</button>
-  <button id="zoom-fit"  title="Fit to window">⤢</button>
-  <button id="fullscreen" title="Fullscreen">[ ]</button>
-  <!-- ⬇ opens original PDF in new tab (your request) -->
-  <a id="openpdf" title="Open PDF in new tab" target="_blank" rel="noopener">⬇</a>
+<div id="controls" role="toolbar" aria-label="Document controls">
+  <button id="prev"      title="Previous page" aria-label="Previous page">⟨</button>
+  <span id="page-info" aria-live="polite">1 / ?</span>
+  <button id="next"      title="Next page" aria-label="Next page">⟩</button>
+
+  <button id="zoom-out"  title="Zoom out" aria-label="Zoom out">−</button>
+  <button id="zoom-in"   title="Zoom in"  aria-label="Zoom in">+</button>
+  <button id="zoom-fit"  title="Fit to window" aria-label="Fit to window">⤢</button>
+
+  <!-- Four-corners fullscreen icon (SVG) -->
+  <button id="fullscreen" title="Fullscreen" aria-label="Fullscreen" style="padding:0 .4rem">
+    <svg width="20" height="20" viewBox="0 0 24 24" aria-hidden="true">
+      <path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="square"/>
+    </svg>
+  </button>
+
+  <!-- Down arrow (open original PDF in new tab) -->
+  <a id="openpdf" title="Open PDF in new tab" target="_blank" rel="noopener" aria-label="Open PDF">⬇</a>
 </div>
 
 <script>
@@ -77,7 +85,6 @@
     const fitWidth = vw / vp1.width;                             // page fills width; vertical scroll
 
     // Keep current zoom within [fitWhole, fitWidth]
-    // Represent zoom as multiplier of fitWhole (minZoom=1)
     minZoom = 1;
     maxZoom = Math.max(1, fitWidth / fitWhole);
     zoom = Math.min(Math.max(zoom, minZoom), maxZoom);
@@ -153,15 +160,14 @@
     await renderPage(current, anchor);
   }
 
-  // ---------- Events ----------
-  // Buttons
+  // ---------- Controls ----------
   document.getElementById('prev').onclick     = ()=>goTo(current-1);
   document.getElementById('next').onclick     = ()=>goTo(current+1);
   document.getElementById('zoom-in').onclick  = ()=>zoomTo(zoom*1.2, {x:viewer.clientWidth/2, y:viewer.clientHeight/2});
   document.getElementById('zoom-out').onclick = ()=>zoomTo(zoom/1.2, {x:viewer.clientWidth/2, y:viewer.clientHeight/2});
   document.getElementById('zoom-fit').onclick = ()=>zoomTo(minZoom, {x:viewer.clientWidth/2, y:viewer.clientHeight/2});
 
-  // Fullscreen with fallbacks; if blocked, open PDF in new tab
+  // Fullscreen with fallbacks; if blocked, open PDF in a new tab
   document.getElementById('fullscreen').onclick = ()=>{
     const el = viewer;
     const req = el.requestFullscreen || el.webkitRequestFullscreen || el.msRequestFullscreen || el.mozRequestFullScreen;
@@ -179,7 +185,11 @@
     if (e.key === 'ArrowRight') { e.preventDefault(); goTo(current+1); }
   });
 
-  // Wheel zoom (ctrl/trackpad pinch); clamp to fit-width
+  // Edge clicks turn pages
+  edgePrev.addEventListener('click', ()=>goTo(current-1));
+  edgeNext.addEventListener('click', ()=>goTo(current+1));
+
+  // Wheel zoom (desktop trackpad pinch); clamp to fit-width
   viewer.addEventListener('wheel', (e)=>{
     if (e.ctrlKey){
       e.preventDefault();
@@ -190,9 +200,46 @@
     }
   }, {passive:false});
 
-  // Edge clicks turn pages
-  edgePrev.addEventListener('click', ()=>goTo(current-1));
-  edgeNext.addEventListener('click', ()=>goTo(current+1));
+  // --------- Mobile pinch & double-tap zoom ---------
+  let pinchStartDist=0, pinchStartZoom=1, pinchAnchor=null, lastTap=0;
+
+  function dist(a,b){
+    const dx=a.clientX-b.clientX, dy=a.clientY-b.clientY; return Math.hypot(dx,dy);
+  }
+  function mid(a,b,rect){
+    return { x: ((a.clientX+b.clientX)/2 - rect.left), y: ((a.clientY+b.clientY)/2 - rect.top) };
+  }
+
+  viewer.addEventListener('touchstart', (e)=>{
+    if (e.touches.length===2){
+      const rect = viewer.getBoundingClientRect();
+      pinchStartDist = dist(e.touches[0], e.touches[1]);
+      pinchStartZoom = zoom;
+      pinchAnchor    = mid(e.touches[0], e.touches[1], rect);
+    }
+  }, {passive:true});
+
+  viewer.addEventListener('touchmove', (e)=>{
+    if (e.touches.length===2 && pinchStartDist>0){
+      e.preventDefault(); // use our pinch, not page zoom
+      const d = dist(e.touches[0], e.touches[1]);
+      const factor = d / pinchStartDist;
+      zoomTo(pinchStartZoom * factor, pinchAnchor);
+    }
+  }, {passive:false});
+
+  // Double-tap to toggle zoom (mobile)
+  viewer.addEventListener('touchend', (e)=>{
+    const now = Date.now();
+    if (e.changedTouches.length===1 && now-lastTap<300){
+      const rect = viewer.getBoundingClientRect();
+      const t = e.changedTouches[0];
+      const anchor = { x:t.clientX-rect.left, y:t.clientY-rect.top };
+      const target = (Math.abs(zoom-minZoom) < 0.05) ? Math.min(maxZoom, minZoom*2) : minZoom;
+      zoomTo(target, anchor);
+    }
+    lastTap = now;
+  }, {passive:true});
 
   // Resize keeps current zoom target within bounds
   window.addEventListener('resize', ()=>renderPage(current));
