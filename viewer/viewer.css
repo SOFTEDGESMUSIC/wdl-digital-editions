@@ -1,91 +1,39 @@
-body {
-  margin:0;
-  font-family:sans-serif;
-  background:#fff;
-  color:#000;
-  overflow:hidden;
+html,body {
+  margin:0; padding:0;
+  height:100%; width:100%;
+  background:#fff; color:#000;
+  font-family:system-ui, sans-serif;
 }
-
-#progress {
-  position:fixed;
-  top:0;left:0;height:4px;
-  background:#0a0;
-  width:0;
-}
-
 #viewer {
-  position:fixed;
-  top:0;left:0;right:0;bottom:60px;
-  display:flex;
-  align-items:center;
-  justify-content:center;
+  position:relative;
+  width:100%; height:calc(100% - 50px);
+  display:flex; justify-content:center; align-items:center;
   overflow:auto;
-  background:#fff;
 }
-
 #viewer canvas {
-  max-width:100%;
-  height:auto;
-}
-
-/* Controls */
-#controls {
-  position:fixed;
-  bottom:0;left:50%;
-  transform:translateX(-50%);
-  display:flex;
-  gap:10px;
-  align-items:center;
+  display:block;
+  margin:auto;
   background:#fff;
-  padding:8px 12px;
-  border-top:1px solid #ddd;
-  border-radius:6px 6px 0 0;
+  box-shadow:0 0 12px rgba(0,0,0,.15);
 }
-
+#controls {
+  position:fixed; bottom:0; left:50%;
+  transform:translateX(-50%);
+  background:#fff; border-radius:8px;
+  box-shadow:0 2px 8px rgba(0,0,0,.1);
+  display:flex; align-items:center; gap:.5rem;
+  padding:.3rem .6rem; z-index:100;
+}
 #controls button, #controls a {
-  background:none;
-  border:none;
-  cursor:pointer;
-  font-size:18px;
-  color:#000;
-  text-decoration:none;
+  border:0; background:#fff; cursor:pointer;
+  font-size:16px; padding:.2rem .5rem; text-decoration:none;
 }
-
-/* Thumbnails */
-#thumbstrip {
-  position: fixed;
-  bottom: 80px;
-  left: 0;
-  right: 0;
-  display: flex;
-  overflow-x: auto;
-  gap: 6px;
-  padding: 6px;
-  background: #f4f4f4;
-  border-top: 1px solid #ddd;
-  transition: max-height 0.3s ease;
+#controls button:hover, #controls a:hover {
+  background:#f2f2f2;
 }
-
-#thumbstrip canvas {
-  cursor: pointer;
-  border: 2px solid transparent;
-}
-
-#thumbstrip canvas.active {
-  border-color: #0a0;
-}
-
-/* Mobile: collapse thumbs */
-@media (max-width: 768px) {
-  #thumbstrip {
-    max-height: 0;
-    overflow: hidden;
-    padding: 0;
-    border-top: none;
-  }
-  #thumbstrip.show {
-    max-height: 120px;
-    padding: 6px;
-    border-top: 1px solid #ddd;
-  }
+#progress {
+  position:fixed; top:0; left:0;
+  height:3px; width:0;
+  background:#0078d7; z-index:200;
+  transition:width .3s;
 }
