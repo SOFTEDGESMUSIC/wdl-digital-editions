@@ -1,26 +1,19 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="en">
-<meta charset="utf-8">
-<title>Latest Issue</title>
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<script>
-(async function(){
-  try{
-    const r = await fetch("../latest.json", {cache:"no-store"});
-    const meta = await r.json();
-    if (meta && meta.pdf){
-      const pdfPath = meta.pdf.startsWith("/") ? meta.pdf : "../" + meta.pdf;
-      const viewer = "./viewer.html?file=" + encodeURIComponent(pdfPath);
-      location.replace(viewer);
-    } else {
-      document.body.textContent = "latest.json missing 'pdf' field.";
-    }
-  } catch(e){
-    document.body.textContent = "Could not load latest.json.";
-  }
-})();
-</script>
-<body style="margin:0;font:16px system-ui;padding:2rem;color:#333">
-Loading latest issue…
+<head>
+  <meta charset="utf-8"/>
+  <title>WDL Latest Edition</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <style>
+    body { margin:0; height:100vh; }
+    iframe { width:100%; height:100%; border:0; }
+  </style>
+</head>
+<body>
+  <!-- This always points to the newest PDF -->
+  <iframe 
+    src="viewer.html?pdf=/editions/WDL-LATEST.pdf"
+    loading="lazy">
+  </iframe>
 </body>
 </html>
