@@ -5,112 +5,256 @@
 <title>WDL Viewer</title>
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no"/>
 <link rel="stylesheet" href="viewer.css"/>
-<script src="https://softedgesmusic.github.io/wdl-digital-editions/lib/pdfjs/pdf.min.js"></script>
-<script src="https://softedgesmusic.github.io/wdl-digital-editions/lib/pdfjs/pdf.worker.min.js"></script>
+
+<!-- PDF.js (self-hosted) -->
+<script src="/wdl-digital-editions/lib/pdfjs/pdf.min.js"></script>
+<script src="/wdl-digital-editions/lib/pdfjs/pdf.worker.min.js"></script>
 </head>
 <body>
 <div id="progress"></div>
-<div id="viewer"></div>
+
+<!-- Main viewer -->
+<div id="viewer" class="noselect">
+  <div id="pageWrap">
+    <canvas id="pageCanvas"></canvas>
+    <div class="edge edge-left"  id="edgePrev"  aria-label="Previous page"><span class="chev">‹</span></div>
+    <div class="edge edge-right" id="edgeNext"  aria-label="Next page"><span class="chev">›</span></div>
+  </div>
+</div>
+
+<!-- Controls (same layout; download is a down arrow ⬇) -->
 <div id="controls">
-  <button id="prev">⟨</button>
+  <button id="prev"      title="Previous page">⟨</button>
   <span id="page-info">1 / ?</span>
-  <button id="next">⟩</button>
-  <button id="zoom-out">−</button>
-  <button id="zoom-in">+</button>
-  <button id="zoom-fit">⤢</button>
-  <button id="fullscreen">[ ]</button>
-  <a id="openpdf" target="_blank">📄</a>
+  <button id="next"      title="Next page">⟩</button>
+  <button id="zoom-out"  title="Zoom out">−</button>
+  <button id="zoom-in"   title="Zoom in">+</button>
+  <button id="zoom-fit"  title="Fit to window">⤢</button>
+  <button id="fullscreen" title="Fullscreen">[ ]</button>
+  <a id="openpdf" title="Open PDF in new tab" target="_blank" rel="noopener">⬇</a>
 </div>
 
 <script>
-const url = new URLSearchParams(location.search).get("pdf") ||
-  "/editions/WDL210825Merged.pdf";
+(function(){
+  // --------- CONFIG / URL ----------
+  const DEFAULT_PDF = "/wdl-digital-editions/editions/WDL210825Merged.pdf";
+  const urlParam = new URLSearchParams(location.search).get("pdf");
+  // Accept absolute, or repo-relative starting with "/wdl-digital-editions/"
+  const pdfURL = urlParam || DEFAULT_PDF;
 
-const viewer = document.getElementById("viewer");
-const pageInfo = document.getElementById("page-info");
-const progress = document.getElementById("progress");
-const openpdf = document.getElementById("openpdf");
-openpdf.href = url;
+  // --------- ELEMENTS ----------
+  const viewer    = document.getElementById("viewer");
+  const pageWrap  = document.getElementById("pageWrap");
+  const canvas    = document.getElementById("pageCanvas");
+  const ctx       = canvas.getContext("2d");
+  const progress  = document.getElementById("progress");
+  const pageInfo  = document.getElementById("page-info");
+  const openpdf   = document.getElementById("openpdf");
+  const edgePrev  = document.getElementById("edgePrev");
+  const edgeNext  = document.getElementById("edgeNext");
 
-let pdfDoc=null, current=1, total=0, zoom=1.0;
-let canvas=document.createElement("canvas"), ctx=canvas.getContext("2d");
-viewer.appendChild(canvas);
+  openpdf.href = pdfURL;
 
-// Progress bar
-function setProgress(p){
-  progress.style.width=(p*100)+"%";
-}
+  // --------- STATE ----------
+  let pdfDoc=null, current=1, total=0, zoom=1;
+  let fitScale=1;               // scale that fits page to available viewer area
+  const DPR = Math.max(1, window.devicePixelRatio || 1);
 
-// Render page
-async function renderPage(num){
-  const page=await pdfDoc.getPage(num);
-  const toolbarH = document.getElementById("controls").offsetHeight || 50;
-  const vw = viewer.clientWidth;
-  const vh = viewer.clientHeight - toolbarH - 10;
-  const baseVp = page.getViewport({scale:1});
-  const scale = Math.min(vw/baseVp.width, vh/baseVp.height) * zoom;
-  const viewport = page.getViewport({scale});
-  canvas.width=viewport.width;
-  canvas.height=viewport.height;
-  await page.render({canvasContext:ctx,viewport}).promise;
-  pageInfo.textContent=`${num} / ${total}`;
-  setProgress(1);
-}
+  // progress bar helper
+  const setProgress = p => progress.style.width = (p*100) + "%";
 
-// Load PDF
-pdfjsLib.getDocument(url).promise.then(doc=>{
-  pdfDoc=doc; total=doc.numPages;
-  renderPage(current);
-}).catch(err=>{
-  console.error("PDF load error",err);
-  progress.textContent="Failed to load PDF.";
-});
-
-// Controls
-document.getElementById("prev").onclick=()=>{
-  if(current>1){current--;renderPage(current);}
-};
-document.getElementById("next").onclick=()=>{
-  if(current<total){current++;renderPage(current);}
-};
-document.getElementById("zoom-in").onclick=()=>{
-  zoom*=1.2; renderPage(current);
-};
-document.getElementById("zoom-out").onclick=()=>{
-  zoom/=1.2; renderPage(current);
-};
-document.getElementById("zoom-fit").onclick=()=>{
-  zoom=1.0; renderPage(current);
-};
-document.getElementById("fullscreen").onclick=()=>{
-  if(document.fullscreenElement){document.exitFullscreen();}
-  else{document.documentElement.requestFullscreen();}
-};
-
-// Double-tap zoom (mobile)
-let lastTap=0;
-viewer.addEventListener("touchend",e=>{
-  const now=Date.now();
-  if(now-lastTap<300 && e.changedTouches.length===1){
-    if(Math.abs(zoom-1.0)<0.05){zoom=2.0;}else{zoom=1.0;}
-    renderPage(current);
+  // compute available width/height (keep page fully visible, not under controls)
+  function availableBox(){
+    const rect = viewer.getBoundingClientRect();
+    // viewer already accounts for controls height via CSS, so just use client sizes
+    return { vw: viewer.clientWidth, vh: viewer.clientHeight };
   }
-  lastTap=now;
-});
 
-// Ctrl+wheel zoom (desktop)
-viewer.addEventListener("wheel",e=>{
-  if(e.ctrlKey){
-    e.preventDefault();
-    zoom*=e.deltaY<0?1.1:0.9;
-    renderPage(current);
+  // Render a page at (fitScale * zoom), with HiDPI pixels for crisp text
+  async function renderPage(num, anchor){
+    const page = await pdfDoc.getPage(num);
+
+    // 1) Base fit-to-window scale
+    const {vw, vh} = availableBox();
+    const vp1 = page.getViewport({ scale: 1 });
+    const fitTo = Math.min(vw / vp1.width, vh / vp1.height);
+    fitScale = fitTo;
+
+    // 2) Effective scale (fit * zoom). We'll render at DPR for crispness
+    const scale = fitScale * zoom;
+    const viewport = page.getViewport({ scale });
+
+    // Desired CSS display size (what user sees)
+    const cssW = Math.floor(viewport.width);
+    const cssH = Math.floor(viewport.height);
+
+    // Preserve anchor while resizing (center or the point under cursor)
+    // Compute old center ratios in content space
+    let rx = (viewer.scrollLeft + viewer.clientWidth / 2) / Math.max(1, pageWrap.clientWidth);
+    let ry = (viewer.scrollTop  + viewer.clientHeight/ 2) / Math.max(1, pageWrap.clientHeight);
+    if (anchor && typeof anchor.rx === "number") { rx = anchor.rx; }
+    if (anchor && typeof anchor.ry === "number") { ry = anchor.ry; }
+
+    // 3) Size canvas: CSS size first
+    canvas.style.width  = cssW + "px";
+    canvas.style.height = cssH + "px";
+    pageWrap.style.width  = cssW + "px";
+    pageWrap.style.height = cssH + "px";
+
+    // 4) Actual pixels: render at DPR for sharp text
+    const outputScale = DPR;
+    canvas.width  = Math.floor(cssW * outputScale);
+    canvas.height = Math.floor(cssH * outputScale);
+
+    // 5) Render
+    setProgress(0.2);
+    const renderContext = {
+      canvasContext: ctx,
+      transform: outputScale !== 1 ? [outputScale, 0, 0, outputScale, 0, 0] : null,
+      viewport
+    };
+    await page.render(renderContext).promise;
+    setProgress(1);
+
+    // 6) Restore scroll so content stays centered / at anchor
+    const newW = pageWrap.clientWidth, newH = pageWrap.clientHeight;
+    const targetLeft = Math.max(0, rx * newW - viewer.clientWidth / 2);
+    const targetTop  = Math.max(0, ry * newH - viewer.clientHeight / 2);
+    viewer.scrollLeft = targetLeft;
+    viewer.scrollTop  = targetTop;
+
+    // Info
+    pageInfo.textContent = `${num} / ${total}`;
   }
-});
 
-// Keep page centered when resizing window
-window.addEventListener("resize",()=>{
-  renderPage(current);
-});
+  // Load PDF with progress (pdf.js onProgress)
+  async function loadPDF(url){
+    setProgress(0.05);
+    pdfjsLib.GlobalWorkerOptions.workerSrc = "/wdl-digital-editions/lib/pdfjs/pdf.worker.min.js";
+    const loadingTask = pdfjsLib.getDocument({ url });
+    loadingTask.onProgress = (e)=>{ if (e && e.total) setProgress(Math.min(0.9, e.loaded / e.total)); };
+    const doc = await loadingTask.promise;
+    setProgress(0.95);
+    return doc;
+  }
+
+  // ----- Navigation + Zoom helpers -----
+  async function goTo(n){
+    current = Math.max(1, Math.min(total, n));
+    await renderPage(current);
+  }
+
+  async function zoomTo(newZoom, anchorPx){
+    newZoom = Math.max(0.5, Math.min(4, newZoom));
+    // Convert an anchor pixel (within viewer) to content ratios before rerender
+    let anchorRatios = null;
+    if (anchorPx){
+      const contentW = pageWrap.clientWidth, contentH = pageWrap.clientHeight;
+      const cx = viewer.scrollLeft + anchorPx.x;
+      const cy = viewer.scrollTop  + anchorPx.y;
+      anchorRatios = { rx: contentW ? cx / contentW : 0.5, ry: contentH ? cy / contentH : 0.5 };
+    }
+    zoom = newZoom;
+    await renderPage(current, anchorRatios);
+  }
+
+  // ----- Drag-to-pan (mouse) -----
+  let dragging=false, sx=0, sy=0, sl=0, st=0, moved=false;
+  viewer.addEventListener("mousedown", (e)=>{
+    // Only start drag if not on a control
+    if (e.button !== 0) return;
+    dragging=true; moved=false;
+    sx=e.clientX; sy=e.clientY; sl=viewer.scrollLeft; st=viewer.scrollTop;
+    viewer.classList.add("noselect");
+  });
+  window.addEventListener("mousemove", (e)=>{
+    if(!dragging) return;
+    const dx = e.clientX - sx, dy = e.clientY - sy;
+    if (Math.abs(dx)>3 || Math.abs(dy)>3) moved=true;
+    viewer.scrollLeft = sl - dx;
+    viewer.scrollTop  = st - dy;
+  });
+  window.addEventListener("mouseup", ()=>{
+    dragging=false; viewer.classList.remove("noselect");
+  });
+
+  // ----- Touch panning (1 finger) + double-tap zoom -----
+  let lastTap=0, touchDragging=false, tx=0, ty=0, tsl=0, tst=0;
+  viewer.addEventListener("touchstart",(e)=>{
+    if(e.touches.length===1){
+      touchDragging=true; tx=e.touches[0].clientX; ty=e.touches[0].clientY; 
+      tsl=viewer.scrollLeft; tst=viewer.scrollTop;
+    }
+  },{passive:true});
+  viewer.addEventListener("touchmove",(e)=>{
+    if(!touchDragging || e.touches.length!==1) return;
+    const dx = e.touches[0].clientX - tx;
+    const dy = e.touches[0].clientY - ty;
+    viewer.scrollLeft = tsl - dx;
+    viewer.scrollTop  = tst - dy;
+  },{passive:true});
+  viewer.addEventListener("touchend",(e)=>{
+    // Double-tap zoom toggle
+    const now=Date.now();
+    if(now-lastTap<300){
+      const rect = viewer.getBoundingClientRect();
+      const t = e.changedTouches[0];
+      zoomTo( Math.abs(zoom-1)<0.05 ? 2 : 1, {x:t.clientX-rect.left, y:t.clientY-rect.top} );
+    }
+    lastTap=now;
+    touchDragging=false;
+  });
+
+  // ----- Wheel zoom (Ctrl/Pinch on trackpad) -----
+  viewer.addEventListener("wheel",(e)=>{
+    if(e.ctrlKey){
+      e.preventDefault();
+      const rect = viewer.getBoundingClientRect();
+      const anchor = { x: e.clientX - rect.left, y: e.clientY - rect.top };
+      const factor = e.deltaY < 0 ? 1.1 : 0.9;
+      zoomTo(zoom * factor, anchor);
+    }
+  }, { passive:false });
+
+  // ----- Buttons -----
+  document.getElementById("prev").onclick      = ()=>goTo(current-1);
+  document.getElementById("next").onclick      = ()=>goTo(current+1);
+  document.getElementById("zoom-in").onclick   = ()=>zoomTo(zoom*1.2, {x:viewer.clientWidth/2, y:viewer.clientHeight/2});
+  document.getElementById("zoom-out").onclick  = ()=>zoomTo(zoom/1.2, {x:viewer.clientWidth/2, y:viewer.clientHeight/2});
+  document.getElementById("zoom-fit").onclick  = ()=>{ zoomTo(1, {x:viewer.clientWidth/2, y:viewer.clientHeight/2}); };
+  document.getElementById("fullscreen").onclick= ()=>{
+    if(document.fullscreenElement){ document.exitFullscreen(); }
+    else { (document.documentElement.requestFullscreen || document.body.requestFullscreen).call(document.documentElement); }
+  };
+
+  // ----- Edge click to turn pages -----
+  // Only trigger if it was a click (no drag). Works at any zoom, but requires click in edge zones.
+  edgePrev.addEventListener("click", async (e)=>{
+    if (dragging || moved) return;
+    await goTo(current-1);
+  });
+  edgeNext.addEventListener("click", async (e)=>{
+    if (dragging || moved) return;
+    await goTo(current+1);
+  });
+
+  // ----- Resize => keep fit (but preserve zoom if user zoomed) -----
+  window.addEventListener("resize", ()=>renderPage(current));
+
+  // ----- Boot -----
+  (async function(){
+    try{
+      setProgress(0.01);
+      pdfDoc = await loadPDF(pdfURL);
+      total  = pdfDoc.numPages;
+      await renderPage(current);
+    }catch(err){
+      console.error("PDF load error", err);
+      setProgress(1);
+    }
+  })();
+
+})();
 </script>
 </body>
 </html>
