@@ -11,7 +11,6 @@
 <body>
 <div id="progress"></div>
 <div id="viewer"></div>
-<div id="thumbstrip"></div>
 <div id="controls">
   <button id="prev">⟨</button>
   <span id="page-info">1 / ?</span>
@@ -24,22 +23,20 @@
 </div>
 
 <script>
-const url = new URLSearchParams(location.search).get("pdf") || 
-  "https://softedgesmusic.github.io/wdl-digital-editions/editions/WDL210825Merged.pdf";
+const url = new URLSearchParams(location.search).get("pdf") ||
+  "/editions/WDL210825Merged.pdf";
 
 const viewer = document.getElementById("viewer");
 const pageInfo = document.getElementById("page-info");
 const progress = document.getElementById("progress");
-const thumbstrip = document.getElementById("thumbstrip");
 const openpdf = document.getElementById("openpdf");
-
 openpdf.href = url;
 
 let pdfDoc=null, current=1, total=0, zoom=1.0;
 let canvas=document.createElement("canvas"), ctx=canvas.getContext("2d");
 viewer.appendChild(canvas);
 
-// Loading bar
+// Progress bar
 function setProgress(p){
   progress.style.width=(p*100)+"%";
 }
@@ -47,49 +44,50 @@ function setProgress(p){
 // Render page
 async function renderPage(num){
   const page=await pdfDoc.getPage(num);
-  const vw=viewer.clientWidth, vh=viewer.clientHeight-80;
-  const scale=Math.min(vw/page.getViewport({scale:1}).width,
-                       vh/page.getViewport({scale:1}).height)*zoom;
-  const viewport=page.getViewport({scale});
-  canvas.width=viewport.width; canvas.height=viewport.height;
-  viewer.scrollLeft=0; viewer.scrollTop=0;
+  const toolbarH = document.getElementById("controls").offsetHeight || 50;
+  const vw = viewer.clientWidth;
+  const vh = viewer.clientHeight - toolbarH - 10;
+  const baseVp = page.getViewport({scale:1});
+  const scale = Math.min(vw/baseVp.width, vh/baseVp.height) * zoom;
+  const viewport = page.getViewport({scale});
+  canvas.width=viewport.width;
+  canvas.height=viewport.height;
   await page.render({canvasContext:ctx,viewport}).promise;
   pageInfo.textContent=`${num} / ${total}`;
   setProgress(1);
 }
 
-// Thumbnails
-async function buildThumbs(){
-  for(let i=1;i<=total;i++){
-    const page=await pdfDoc.getPage(i);
-    const vp=page.getViewport({scale:0.15});
-    const c=document.createElement("canvas");
-    c.width=vp.width; c.height=vp.height;
-    await page.render({canvasContext:c.getContext("2d"),viewport:vp}).promise;
-    c.onclick=()=>{current=i; renderPage(current);};
-    thumbstrip.appendChild(c);
-  }
-}
-
 // Load PDF
 pdfjsLib.getDocument(url).promise.then(doc=>{
   pdfDoc=doc; total=doc.numPages;
-  buildThumbs();
   renderPage(current);
+}).catch(err=>{
+  console.error("PDF load error",err);
+  progress.textContent="Failed to load PDF.";
 });
 
 // Controls
-document.getElementById("prev").onclick=()=>{if(current>1){current--;renderPage(current);}};
-document.getElementById("next").onclick=()=>{if(current<total){current++;renderPage(current);}};
-document.getElementById("zoom-in").onclick=()=>{zoom*=1.2;renderPage(current);};
-document.getElementById("zoom-out").onclick=()=>{zoom/=1.2;renderPage(current);};
-document.getElementById("zoom-fit").onclick=()=>{zoom=1.0;renderPage(current);};
+document.getElementById("prev").onclick=()=>{
+  if(current>1){current--;renderPage(current);}
+};
+document.getElementById("next").onclick=()=>{
+  if(current<total){current++;renderPage(current);}
+};
+document.getElementById("zoom-in").onclick=()=>{
+  zoom*=1.2; renderPage(current);
+};
+document.getElementById("zoom-out").onclick=()=>{
+  zoom/=1.2; renderPage(current);
+};
+document.getElementById("zoom-fit").onclick=()=>{
+  zoom=1.0; renderPage(current);
+};
 document.getElementById("fullscreen").onclick=()=>{
   if(document.fullscreenElement){document.exitFullscreen();}
   else{document.documentElement.requestFullscreen();}
 };
 
-// Double-tap zoom for mobile
+// Double-tap zoom (mobile)
 let lastTap=0;
 viewer.addEventListener("touchend",e=>{
   const now=Date.now();
@@ -100,13 +98,18 @@ viewer.addEventListener("touchend",e=>{
   lastTap=now;
 });
 
-// Wheel zoom (desktop)
+// Ctrl+wheel zoom (desktop)
 viewer.addEventListener("wheel",e=>{
   if(e.ctrlKey){
     e.preventDefault();
     zoom*=e.deltaY<0?1.1:0.9;
     renderPage(current);
   }
+});
+
+// Keep page centered when resizing window
+window.addEventListener("resize",()=>{
+  renderPage(current);
 });
 </script>
 </body>
