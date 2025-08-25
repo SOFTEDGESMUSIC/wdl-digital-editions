@@ -1,10 +1,13 @@
-/* WDL minimal PDF viewer — single page, desktop=Fit Width, mobile=Fit Page */
+/* WDL minimal PDF viewer — single page
+   Desktop: Fit-Width by default
+   Mobile:  Fit-Page by default; double-tap toggles 1x ↔ 2x
+*/
 
 :root{
   --bg:#fff; --fg:#111;
   --bar-bg:#fff; --bar-fg:#111;
-  --barH:46px;           /* actual control bar height */
-  --barGap:12px;
+  --barH:46px;            /* control bar height */
+  --barGap:12px;          /* breathing space above bar */
   --bar-shadow:0 3px 12px rgba(0,0,0,.06);
   --bar-gap:.4rem;
   --bar-pad:.25rem .5rem;
@@ -24,32 +27,32 @@ html,body{height:100%;margin:0;background:var(--bg);color:var(--fg);}
 }
 #progress.active{display:block;}
 
-/* Viewer fills window, leaving room for control bar below */
+/* Viewer fills the window except the bar below */
 #viewer{
   position:relative;
   width:100%;
   height: calc(100vh - var(--barH) - var(--barGap));
-  overflow:auto;              /* scrolling container for pan */
+  overflow:auto;
   background:var(--bg);
 }
-@supports (height: 100svh){
+/* Modern mobile browsers: small viewport to avoid URL-bar jump */
+@supports (height: 100svh) {
   #viewer{ height: calc(100svh - var(--barH) - var(--barGap)); }
 }
 
-/* Page wrapper centers the canvas */
+/* Page wrapper and canvas */
 #pageWrap{
+  margin:0 auto;                 /* center */
   position:relative;
-  margin:0 auto;              /* center horizontally */
-  touch-action: pan-x pan-y;  /* allow native pan if browser wants */
 }
 #pageCanvas{
   display:block;
   user-select:none;
   -webkit-user-select:none;
-  image-rendering:auto;       /* keep text crisp with HiDPI render */
+  background:#fff;               /* prevent black flash */
 }
 
-/* Edge click zones with light grey chevrons */
+/* Edge click zones (+ light grey chevrons) to change page */
 .edge{
   position:absolute; top:0; bottom:0; width:12%;
   display:flex; align-items:center; justify-content:center;
@@ -62,31 +65,44 @@ html,body{height:100%;margin:0;background:var(--bg);color:var(--fg);}
 .edge-right{ right:0; }
 .edge .chev{ font:600 48px/1 "Helvetica Neue", Arial, sans-serif; }
 
-/* Control bar under viewer */
+/* Slim control bar under the viewer */
 #controls{
   position:relative;
   width:fit-content;
   margin:.5rem auto .75rem;
-  background:var(--bar-bg); color:var(--bar-fg);
+  background:var(--bar-bg);
+  color:var(--bar-fg);
   box-shadow:var(--bar-shadow);
   display:flex; align-items:center; gap:var(--bar-gap);
   padding:var(--bar-pad);
-  border-radius:0; /* square */
+  border-radius:0;               /* 0px radius */
 }
 #controls button,
 #controls a{
-  background:var(--bar-bg); color:var(--bar-fg);
-  border:0; border-radius:0; cursor:pointer;
-  padding:var(--btn-pad); text-decoration:none; font:var(--btn-font);
+  background:var(--bar-bg);
+  color:var(--bar-fg);
+  border:0;
+  padding:var(--btn-pad);
+  cursor:pointer;
+  text-decoration:none;
+  font:var(--btn-font);
+  border-radius:0;               /* 0px radius */
 }
-#controls button:hover, #controls a:hover{ background:#f3f3f3; }
-#page-info{ min-width:4.6rem; text-align:center; font:var(--btn-font); }
+#controls button:hover,
+#controls a:hover{ background:#f3f3f3; }
 
-/* Mobile tweaks */
+#page-info{ min-width:4.5rem; text-align:center; font:var(--btn-font); }
+
+/* Mobile tweaks: hide +/- (double-tap is the only zoom), slightly smaller UI */
 @media (max-width: 840px){
-  #controls{ gap:.25rem; padding:.2rem .35rem; }
+  #controls{
+    gap:.25rem;
+    padding:.2rem .35rem;
+  }
   #controls button, #controls a{
-    padding:.2rem .35rem; font:500 13px/1 system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial;
+    padding:.2rem .35rem;
+    font:500 13px/1 system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial;
   }
   .edge .chev{ font-size:40px; }
+  #zoom-in, #zoom-out{ display:none; }   /* per request: double-tap only on mobile */
 }
