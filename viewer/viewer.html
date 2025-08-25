@@ -26,6 +26,7 @@
   <span id="page-info" aria-live="polite">1 / ?</span>
   <button id="next" title="Next page" aria-label="Next page">⟩</button>
 
+  <!-- Toggle Fit (Page <-> Width) -->
   <button id="zoom-toggle" title="Toggle Fit (Page/Width)" aria-label="Toggle Fit">⤢</button>
 
   <!-- Fullscreen icon (four corners) -->
@@ -43,7 +44,7 @@
 <script>
 (function(){
   // ---------- CONFIG ----------
-  const DEFAULT_PDF = "/wdl-digital-editions/editions/WDL210825Merged.pdf";
+  const DEFAULT_PDF = "/wdl-digital-editions/editions/latest.pdf";
   const params = new URLSearchParams(location.search);
   const pdfURL = params.get("pdf") || params.get("file") || DEFAULT_PDF;
 
@@ -73,17 +74,12 @@
   }
   const clamp=(n,a,b)=>Math.max(a,Math.min(b,n));
 
-  function box(){
-    return { vw: viewer.clientWidth, vh: viewer.clientHeight };
-  }
+  function box(){ return { vw: viewer.clientWidth, vh: viewer.clientHeight }; }
 
   function computeScales(page){
-    // returns {fitPage, fitWidth}
     const vp1 = page.getViewport({scale:1});
     const {vw, vh} = box();
-    const fitPage = Math.min(vw / vp1.width, vh / vp1.height);
-    const fitWidth= vw / vp1.width;
-    return { fitPage, fitWidth };
+    return { fitPage: Math.min(vw / vp1.width, vh / vp1.height), fitWidth: vw / vp1.width };
   }
 
   function anchorFromCenter(){
@@ -94,29 +90,23 @@
   }
 
   async function renderPage(num, opts={}){
-    if (!pdfDoc) return;
     const page = await pdfDoc.getPage(num);
     const { fitPage, fitWidth } = computeScales(page);
-
-    // Choose scale by fit mode
-    let scale = (fitMode === "page") ? fitPage : fitWidth;
+    const scale = (fitMode === "page") ? fitPage : fitWidth;
 
     const vp   = page.getViewport({scale});
     const cssW = Math.floor(vp.width);
     const cssH = Math.floor(vp.height);
 
-    // Optional anchor (keeps visual focus when toggling/resizing)
-    let rx = 0.5, ry = 0; // default: center horizontally, top vertically
+    let rx = 0.5, ry = 0;
     if (opts.anchor && typeof opts.anchor.rx === 'number') rx = opts.anchor.rx;
     if (opts.anchor && typeof opts.anchor.ry === 'number') ry = opts.anchor.ry;
 
-    // Size canvas (CSS)
     canvas.style.width  = cssW + "px";
     canvas.style.height = cssH + "px";
     wrap.style.width    = cssW + "px";
     wrap.style.height   = cssH + "px";
 
-    // Hi-DPI render for crisp text
     canvas.width  = Math.floor(cssW * DPR);
     canvas.height = Math.floor(cssH * DPR);
 
@@ -128,7 +118,6 @@
     }).promise;
     setProgress(1);
 
-    // Restore scroll based on anchor
     const newW = wrap.clientWidth, newH = wrap.clientHeight;
     const left = clamp(rx * newW - viewer.clientWidth/2, 0, Math.max(0, newW - viewer.clientWidth));
     const top  = clamp(ry * newH - viewer.clientHeight/2, 0, Math.max(0, newH - viewer.clientHeight));
@@ -149,7 +138,7 @@
 
   async function goTo(n){
     current = clamp(n, 1, total);
-    await renderPage(current, { keepTop:true }); // always show top on first paint
+    await renderPage(current, { keepTop:true });
   }
 
   // ---------- Controls ----------
@@ -165,9 +154,10 @@
 
   // Double-click to toggle fit (desktop)
   viewer.addEventListener('dblclick', (e)=>{
+    const rect = viewer.getBoundingClientRect();
     const anchor = {
-      rx: (viewer.scrollLeft + e.clientX - viewer.getBoundingClientRect().left) / Math.max(1, wrap.clientWidth),
-      ry: (viewer.scrollTop  + e.clientY - viewer.getBoundingClientRect().top ) / Math.max(1, wrap.clientHeight),
+      rx: (viewer.scrollLeft + (e.clientX-rect.left)) / Math.max(1, wrap.clientWidth),
+      ry: (viewer.scrollTop  + (e.clientY-rect.top )) / Math.max(1, wrap.clientHeight),
     };
     fitMode = (fitMode === "page") ? "width" : "page";
     renderPage(current, { anchor });
