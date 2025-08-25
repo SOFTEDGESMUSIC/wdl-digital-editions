@@ -32,7 +32,7 @@
   <button id="zoom-out"  title="Zoom out" aria-label="Zoom out">−</button>
   <button id="zoom-in"   title="Zoom in"  aria-label="Zoom in">+</button>
 
-  <!-- Toggle Fit/Page Width — label is just an icon now -->
+  <!-- Toggle Fit/Page Width — label is just an icon -->
   <button id="zoom-toggle" title="Toggle Fit/Page Width" aria-label="Toggle Fit ↔ Width">↔</button>
 
   <!-- Open PDF in a new tab (down arrow) -->
@@ -64,6 +64,7 @@
   let minZoom=1, maxZoom=1;
   let fitMode="page"; // "page" or "width"
   const DPR = Math.max(1, window.devicePixelRatio||1);
+  const isMobile = () => matchMedia("(max-width: 840px)").matches;
 
   function setProgress(p){
     if (p > 0 && p < 1) progress.classList.add('active'); else progress.classList.remove('active');
@@ -72,7 +73,7 @@
 
   function box(){ return { vw: viewer.clientWidth, vh: viewer.clientHeight }; }
 
-  // Compute bounds each render. We cap FINAL zoom at Fit Width (by clamping per mode).
+  // Compute base fits and ratio between them
   function computeFit(vp1){
     const {vw, vh} = box();
     const fitWhole = Math.min(vw/vp1.width, vh/vp1.height); // full page visible
@@ -84,26 +85,30 @@
   async function renderPage(num, anchor){
     const page = await pdfDoc.getPage(num);
 
-    // sharpen when zoomed
+    // crisp text
     ctx.imageSmoothingEnabled = false;
 
-    // Use page.rotate explicitly to avoid odd orientations
+    // normalize rotation
     const rotation = (page.rotate || 0) % 360;
     const vp1 = page.getViewport({ scale:1, rotation });
 
-    // Fit metrics + clamp plan
     const { fitWhole, fitWidth, widthFactor } = computeFit(vp1);
 
-    // In "page" mode: zoom in up to widthFactor (== Fit Width)
-    // In "width" mode: lock zoom to 1 (no beyond width)
+    // --- MOBILE OVERSHOOT RULES ---
+    // Desktop: cap at Fit Width
+    // Mobile: allow up to 2× Fit Width
+    const mobileExtra = isMobile() ? 2 : 1;
+
     if (fitMode === "page"){
+      // base is 'fitWhole'; let zoom reach widthFactor * mobileExtra
       minZoom = 1;
-      maxZoom = Math.max(1, widthFactor);
+      maxZoom = Math.max(1, widthFactor * mobileExtra);
     } else {
+      // base is 'fitWidth'; on mobile allow up to 2x width, desktop lock to width
       minZoom = 1;
-      maxZoom = 1;
-      zoom = 1; // enforce width cap
+      maxZoom = mobileExtra; // 1 on desktop, 2 on mobile
     }
+
     zoom = Math.min(Math.max(zoom, minZoom), maxZoom);
 
     const base = (fitMode === "page") ? fitWhole : fitWidth;
@@ -113,7 +118,7 @@
     const cssW = Math.floor(vp.width);
     const cssH = Math.floor(vp.height);
 
-    // Remember current center (or use provided anchor)
+    // Remember center (or provided anchor)
     let rx = (viewer.scrollLeft + viewer.clientWidth/2) / Math.max(1, wrap.clientWidth);
     let ry = (viewer.scrollTop  + viewer.clientHeight/2) / Math.max(1, wrap.clientHeight);
     if (anchor && typeof anchor.rx === 'number') rx = anchor.rx;
@@ -125,12 +130,10 @@
     wrap.style.width    = cssW + "px";
     wrap.style.height   = cssH + "px";
 
-    // Hi-DPI canvas for crisp text
+    // Hi-DPI canvas for crisp render
     const out = DPR;
     canvas.width  = Math.floor(cssW * out);
     canvas.height = Math.floor(cssH * out);
-
-    // Reset any prior transforms on context to avoid visual oddities
     ctx.setTransform(1,0,0,1,0,0);
 
     setProgress(0.1);
@@ -168,7 +171,6 @@
 
   // Zoom to value (clamped by mode). Anchor is viewer-local px.
   async function zoomTo(newZoom, anchorPx){
-    // Convert pixel anchor to relative anchor BEFORE re-render
     let anchor=null;
     if (anchorPx){
       const cw = wrap.clientWidth, ch = wrap.clientHeight;
@@ -190,11 +192,11 @@
   document.getElementById('prev').onclick     = ()=>goTo(current-1);
   document.getElementById('next').onclick     = ()=>goTo(current+1);
 
-  // Zoom buttons: in width mode they effectively do nothing (capped at 1)
+  // Zoom buttons (respect caps: desktop <= FitWidth, mobile <= 2x FitWidth)
   document.getElementById('zoom-in').onclick  = ()=>zoomTo(zoom*1.2, {x:viewer.clientWidth/2, y:viewer.clientHeight/2});
   document.getElementById('zoom-out').onclick = ()=>zoomTo(zoom/1.2, {x:viewer.clientWidth/2, y:viewer.clientHeight/2});
 
-  // Fit/Page Width toggle (button shows only ↔ icon)
+  // Fit/Page Width toggle
   document.getElementById('zoom-toggle').onclick = ()=>toggleFit();
 
   // Keyboard arrows turn pages
@@ -208,7 +210,7 @@
   edgePrev.addEventListener('click', ()=>goTo(current-1));
   edgeNext.addEventListener('click', ()=>goTo(current+1));
 
-  // -------- Robust mobile gestures (pinch + pan) --------
+  // -------- Mobile gestures (pinch + pan) --------
   const active = new Map(); // pointerId -> {x,y}
   let startDist=0, startZoom=1, anchorPE=null;
   let panning=false, panId=null, panStart={x:0,y:0}, panScroll={l:0,t:0};
@@ -218,10 +220,10 @@
   const peMid   = (a,b,rect) => ({ x:((a.x+b.x)/2 - rect.left), y:((a.y+b.y)/2 - rect.top) });
 
   function onPointerDown(e){
-    if (e.target.closest('#controls') || e.target.closest('.edge')) return; // let bars/edges click
+    if (e.target.closest('#controls') || e.target.closest('.edge')) return;
     active.set(e.pointerId, pePoint(e));
 
-    // Two-finger pinch (zoom capped by Fit Width)
+    // Two-finger pinch
     if (active.size === 2){
       const pts = Array.from(active.values());
       const rect = viewer.getBoundingClientRect();
@@ -247,12 +249,11 @@
     if (!active.has(e.pointerId)) return;
     active.set(e.pointerId, pePoint(e));
 
-    // Pinch
+    // Pinch zoom (caps applied in renderPage via maxZoom)
     if (active.size === 2 && startDist>0){
       const pts = Array.from(active.values());
       const d = peDist(pts[0], pts[1]);
       const factor = d / startDist;
-      // If currently in width mode, keep mode but zoom will clamp to 1; if in page mode allow up to Fit Width
       zoomTo(startZoom * factor, anchorPE);
       e.preventDefault();
       return;
@@ -278,7 +279,7 @@
   viewer.addEventListener('pointercancel', onPointerUp, {passive:false});
   viewer.addEventListener('pointerleave',  onPointerUp, {passive:false});
 
-  // Ctrl+wheel zoom (desktop / trackpad pinch) — still capped by Fit Width
+  // Ctrl+wheel zoom (desktop / trackpad pinch)
   viewer.addEventListener('wheel', (e)=>{
     if (e.ctrlKey){
       e.preventDefault();
@@ -289,7 +290,7 @@
     }
   }, {passive:false});
 
-  // Double-click (desktop) & double-tap (mobile) toggle Fit <-> Width
+  // Double-click (desktop) & double-tap (mobile) toggles Fit <-> Width
   viewer.addEventListener('dblclick', (e)=>{ e.preventDefault(); toggleFit(); });
 
   let lastTap=0;
@@ -297,12 +298,12 @@
     const now = Date.now();
     if (e.changedTouches.length===1 && now-lastTap<300){
       e.preventDefault();
-      toggleFit(); // clean, predictable: Fit Page ↔ Fit Width
+      toggleFit();
     }
     lastTap = now;
   }, {passive:false});
 
-  // Keep the top visible as we resize; bias anchor to near top
+  // Keep top visible on resize
   window.addEventListener('resize', ()=>{
     renderPage(current, { rx:.5, ry:.05 });
   });
@@ -315,7 +316,7 @@
       fitMode = "page";
       zoom = 1;
       await renderPage(current, {rx:.5, ry:0});
-      viewer.scrollTop = 0; // ensure header visible
+      viewer.scrollTop = 0;
     }catch(err){
       console.error("PDF load error", err);
       alert("Sorry, the PDF could not be loaded.");
