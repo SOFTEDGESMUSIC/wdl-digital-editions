@@ -78,30 +78,31 @@
 
   // Fit computation and bounds
   function computeFit(vp1) {
-  const { vw, vh } = box();
-  const fitWhole = Math.min(vw / vp1.width, vh / vp1.height);
-  const fitWidth = vw / vp1.width;
-  const baseWidthZoom = fitWidth / fitWhole;
+    const { vw, vh } = box();
+    const fitWhole = Math.min(vw / vp1.width, vh / vp1.height);
+    const fitWidth = vw / vp1.width;
+    const baseWidthZoom = fitWidth / fitWhole;
 
-  // 👇 First render default: desktop = width, mobile = page
-  if (!firstRenderDone) {
-    fitMode = isMobile() ? "page" : "width";
-    zoom = (fitMode === "width") ? baseWidthZoom : 1;
+    // First render defaults: desktop = width, mobile = page
+    if (!firstRenderDone) {
+      fitMode = isMobile() ? "page" : "width";
+      zoom = (fitMode === "width") ? baseWidthZoom : 1;
+    }
+
+    // Bounds (desktop caps at fit-width; mobile allows 2× beyond fit-width)
+    minZoom = 1;
+    maxZoom = isMobile() ? Math.max(baseWidthZoom, baseWidthZoom * 2) : Math.max(1, baseWidthZoom);
+    zoom = Math.min(Math.max(zoom, minZoom), maxZoom);
+
+    return { fitWhole, baseWidthZoom };
   }
 
-  // Bounds (desktop caps at fit-width; mobile allows 2× beyond)
-  minZoom = 1;
-  maxZoom = isMobile() ? Math.max(baseWidthZoom, baseWidthZoom * 2) : Math.max(1, baseWidthZoom);
-  zoom = Math.min(Math.max(zoom, minZoom), maxZoom);
-
-  return { fitWhole, baseWidthZoom };
-}
   async function renderPage(num, anchor) {
     const page = await pdfDoc.getPage(num);
     const vp1  = page.getViewport({ scale: 1 });
     const { fitWhole } = computeFit(vp1);
 
-    // Compute CSS size of canvas for current zoom
+    // Compute CSS size for current zoom
     const scale = fitWhole * zoom;
     const vp = page.getViewport({ scale });
     const cssW = Math.floor(vp.width);
@@ -161,9 +162,7 @@
   }
 
   async function zoomTo(newZoom, anchorPx) {
-    const { vw, vh } = box();
     const cw = wrap.clientWidth, ch = wrap.clientHeight;
-
     newZoom = Math.max(minZoom, Math.min(maxZoom, newZoom));
 
     let anchor = null;
@@ -177,10 +176,10 @@
   }
 
   async function toggleFitMode() {
-    // Recompute fit values from current page to get the correct baseWidthZoom
+    // Recompute values from current page to get correct baseWidthZoom
     const page = await pdfDoc.getPage(current);
     const vp1  = page.getViewport({ scale: 1 });
-    const { fitWhole, baseWidthZoom } = computeFit(vp1);
+    const { baseWidthZoom } = computeFit(vp1);
 
     fitMode = (fitMode === "page") ? "width" : "page";
     const targetZoom = (fitMode === "width") ? baseWidthZoom : 1;
@@ -289,18 +288,18 @@
     }
   }, { passive: false });
 
-  // Double-click (desktop) & double-tap (mobile): toggle fit modes at current center
-  function doToggleAtPointer(clientX, clientY) {
-    const rect = viewer.getBoundingClientRect();
-    toggleFitMode().then(() => {/* already centers around viewport mid in toggleFitMode */});
+  // Double-click (desktop) & double-tap (mobile): toggle fit modes
+  function doToggleAtPointer() {
+    // toggleFitMode already anchors to center; keeping it simple
+    toggleFitMode();
   }
-  viewer.addEventListener('dblclick', (e) => { e.preventDefault(); doToggleAtPointer(e.clientX, e.clientY); });
+  viewer.addEventListener('dblclick', (e) => { e.preventDefault(); doToggleAtPointer(); });
 
   let lastTap = 0;
   viewer.addEventListener('touchend', (e) => {
     const now = Date.now();
     if (e.changedTouches.length === 1 && (now - lastTap) < 300) {
-      doToggleAtPointer(e.changedTouches[0].clientX, e.changedTouches[0].clientY);
+      doToggleAtPointer();
     }
     lastTap = now;
   }, { passive: true });
