@@ -17,7 +17,14 @@
   --progress:#16a34a;
 }
 
-html,body{height:100%;margin:0;background:var(--bg);color:var(--fg);}
+html,body{
+  height:100%;
+  margin:0;
+  background:var(--bg);
+  color:var(--fg);
+  /* Hint to some browsers to avoid double-tap zoom while letting our pointer gestures work */
+  -webkit-tap-highlight-color: transparent;
+}
 
 /* Top loading bar */
 #progress{
@@ -36,15 +43,13 @@ html,body{height:100%;margin:0;background:var(--bg);color:var(--fg);}
 }
 /* Modern mobile browsers: use the "small viewport" unit to avoid URL-bar jump */
 @supports (height: 100svh) {
-  #viewer {
-    height: calc(100svh - var(--barH) - var(--barGap));
-  }
+  #viewer { height: calc(100svh - var(--barH) - var(--barGap)); }
 }
 
 #pageWrap{
   margin:0 auto;                 /* center */
   position:relative;
-  touch-action: pan-x pan-y;     /* allow panning */
+  touch-action: pan-x pan-y;     /* allow panning and pinch (via pointer events) */
 }
 #pageCanvas{
   display:block;
