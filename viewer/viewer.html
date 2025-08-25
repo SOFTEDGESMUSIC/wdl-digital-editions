@@ -9,80 +9,6 @@
 <!-- PDF.js (self-hosted) -->
 <script src="/wdl-digital-editions/lib/pdfjs/pdf.min.js"></script>
 <script src="/wdl-digital-editions/lib/pdfjs/pdf.worker.min.js"></script>
-
-<style>
-  body {
-    margin: 0;
-    background: #fff;
-    font-family: sans-serif;
-  }
-
-  #viewer {
-    width: 100%;
-    height: calc(100vh - 50px); /* leaves space for toolbar */
-    overflow: auto;
-    background: #fff;
-  }
-
-  #pageWrap {
-    margin: 0 auto;
-    display: block;
-    background: #fff;
-  }
-
-  canvas {
-    display: block;
-    margin: 0 auto;
-  }
-
-  #progress {
-    height: 4px;
-    background: #4caf50;
-    width: 0%;
-    transition: width 0.3s;
-  }
-
-  #controls {
-    height: 50px;
-    display: flex;
-    justify-content: center;
-    align-items: center;
-    background: #fff;
-    border-top: 1px solid #ccc;
-    gap: .5rem;
-  }
-
-  #controls button, #controls a {
-    border: none;
-    background: none;
-    font-size: 1.2rem;
-    cursor: pointer;
-    padding: 0 .5rem;
-    text-decoration: none;
-    color: black;
-  }
-
-  #controls a {
-    font-size: 1.4rem;
-  }
-
-  .edge {
-    position: absolute;
-    top: 0;
-    bottom: 0;
-    width: 20%;
-    cursor: pointer;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    color: rgba(0,0,0,0.2);
-    font-size: 3rem;
-    user-select: none;
-  }
-  .edge-left { left: 0; }
-  .edge-right { right: 0; }
-  .edge:hover { color: rgba(0,0,0,0.5); }
-</style>
 </head>
 <body>
 <div id="progress"></div>
@@ -90,76 +16,111 @@
 <div id="viewer">
   <div id="pageWrap">
     <canvas id="pageCanvas"></canvas>
-    <div class="edge edge-left"  id="edgePrev" aria-label="Previous page"><span class="chev">‹</span></div>
-    <div class="edge edge-right" id="edgeNext" aria-label="Next page"><span class="chev">›</span></div>
+    <div class="edge edge-left"  id="edgePrev"  aria-label="Previous page"><span class="chev">‹</span></div>
+    <div class="edge edge-right" id="edgeNext"  aria-label="Next page"><span class="chev">›</span></div>
   </div>
 </div>
 
 <div id="controls" role="toolbar" aria-label="Document controls">
-  <button id="prev" title="Previous page">⟨</button>
-  <span id="page-info">1 / ?</span>
-  <button id="next" title="Next page">⟩</button>
+  <button id="prev" title="Previous page" aria-label="Previous page">⟨</button>
+  <span id="page-info" aria-live="polite">1 / ?</span>
+  <button id="next" title="Next page" aria-label="Next page">⟩</button>
 
-  <button id="zoom-out" title="Zoom out">−</button>
-  <button id="zoom-in"  title="Zoom in">+</button>
-  <button id="zoom-fit" title="Fit to window">⤢</button>
+  <button id="zoom-toggle" title="Toggle Fit (Page/Width)" aria-label="Toggle Fit">⤢</button>
 
   <!-- Fullscreen icon (four corners) -->
-  <button id="fullscreen" title="Fullscreen" style="padding:0 .4rem">
-    <svg width="18" height="18" viewBox="0 0 24 24">
+  <button id="fullscreen" title="Fullscreen" aria-label="Fullscreen" style="padding:0 .4rem">
+    <svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true">
       <path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"
             fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="square"/>
     </svg>
   </button>
 
   <!-- Open in new tab (down arrow) -->
-  <a id="openpdf" target="_blank" rel="noopener" title="Open PDF in new tab">⬇</a>
+  <a id="openpdf" title="Open PDF in new tab" target="_blank" rel="noopener" aria-label="Open PDF">⬇</a>
 </div>
 
 <script>
 (function(){
+  // ---------- CONFIG ----------
   const DEFAULT_PDF = "/wdl-digital-editions/editions/WDL210825Merged.pdf";
   const params = new URLSearchParams(location.search);
   const pdfURL = params.get("pdf") || params.get("file") || DEFAULT_PDF;
 
+  // ---------- ELEMENTS ----------
   const viewer   = document.getElementById("viewer");
   const wrap     = document.getElementById("pageWrap");
   const canvas   = document.getElementById("pageCanvas");
   const ctx      = canvas.getContext("2d");
   const progress = document.getElementById("progress");
   const pageInfo = document.getElementById("page-info");
+  const openpdf  = document.getElementById("openpdf");
+  const btnToggle= document.getElementById("zoom-toggle");
   const edgePrev = document.getElementById("edgePrev");
   const edgeNext = document.getElementById("edgeNext");
-  const openpdf  = document.getElementById("openpdf");
+
   openpdf.href   = pdfURL;
 
-  let pdfDoc=null, current=1, total=0, zoom=1;
+  // ---------- STATE ----------
+  let pdfDoc=null, current=1, total=0;
+  let fitMode = "page";              // "page" or "width"
   const DPR = Math.max(1, window.devicePixelRatio||1);
 
+  // ---------- UTILS ----------
   function setProgress(p){
+    if (p>0 && p<1) progress.classList.add('active'); else progress.classList.remove('active');
     progress.style.width = (p*100) + '%';
   }
+  const clamp=(n,a,b)=>Math.max(a,Math.min(b,n));
 
-  async function renderPage(num){
-    const page = await pdfDoc.getPage(num);
+  function box(){
+    return { vw: viewer.clientWidth, vh: viewer.clientHeight };
+  }
 
-    const vw = viewer.clientWidth, vh = viewer.clientHeight;
+  function computeScales(page){
+    // returns {fitPage, fitWidth}
     const vp1 = page.getViewport({scale:1});
+    const {vw, vh} = box();
+    const fitPage = Math.min(vw / vp1.width, vh / vp1.height);
+    const fitWidth= vw / vp1.width;
+    return { fitPage, fitWidth };
+  }
 
-    const fit = Math.min(vw/vp1.width, vh/vp1.height);
-    zoom = fit;
+  function anchorFromCenter(){
+    return {
+      rx: (viewer.scrollLeft + viewer.clientWidth/2) / Math.max(1, wrap.clientWidth),
+      ry: (viewer.scrollTop  + viewer.clientHeight/2) / Math.max(1, wrap.clientHeight),
+    };
+  }
 
-    const vp = page.getViewport({scale:fit});
-    const cssW = Math.floor(vp.width), cssH = Math.floor(vp.height);
+  async function renderPage(num, opts={}){
+    if (!pdfDoc) return;
+    const page = await pdfDoc.getPage(num);
+    const { fitPage, fitWidth } = computeScales(page);
 
+    // Choose scale by fit mode
+    let scale = (fitMode === "page") ? fitPage : fitWidth;
+
+    const vp   = page.getViewport({scale});
+    const cssW = Math.floor(vp.width);
+    const cssH = Math.floor(vp.height);
+
+    // Optional anchor (keeps visual focus when toggling/resizing)
+    let rx = 0.5, ry = 0; // default: center horizontally, top vertically
+    if (opts.anchor && typeof opts.anchor.rx === 'number') rx = opts.anchor.rx;
+    if (opts.anchor && typeof opts.anchor.ry === 'number') ry = opts.anchor.ry;
+
+    // Size canvas (CSS)
+    canvas.style.width  = cssW + "px";
+    canvas.style.height = cssH + "px";
+    wrap.style.width    = cssW + "px";
+    wrap.style.height   = cssH + "px";
+
+    // Hi-DPI render for crisp text
     canvas.width  = Math.floor(cssW * DPR);
     canvas.height = Math.floor(cssH * DPR);
-    canvas.style.width  = cssW+"px";
-    canvas.style.height = cssH+"px";
-    wrap.style.width    = cssW+"px";
-    wrap.style.height   = cssH+"px";
 
-    setProgress(0.1);
+    setProgress(0.12);
     await page.render({
       canvasContext: ctx,
       transform: DPR!==1 ? [DPR,0,0,DPR,0,0] : null,
@@ -167,49 +128,96 @@
     }).promise;
     setProgress(1);
 
-    viewer.scrollLeft = 0;
-    viewer.scrollTop = 0; // always start from top
+    // Restore scroll based on anchor
+    const newW = wrap.clientWidth, newH = wrap.clientHeight;
+    const left = clamp(rx * newW - viewer.clientWidth/2, 0, Math.max(0, newW - viewer.clientWidth));
+    const top  = clamp(ry * newH - viewer.clientHeight/2, 0, Math.max(0, newH - viewer.clientHeight));
+    viewer.scrollLeft = left;
+    viewer.scrollTop  = (opts.keepTop ? 0 : top);
+
     pageInfo.textContent = `${num} / ${total}`;
   }
 
   async function loadPDF(url){
     pdfjsLib.GlobalWorkerOptions.workerSrc = "/wdl-digital-editions/lib/pdfjs/pdf.worker.min.js";
-    const doc = await pdfjsLib.getDocument({ url }).promise;
+    const task = pdfjsLib.getDocument({ url });
+    task.onProgress = (e)=>{ if (e && e.total) setProgress(Math.min(0.9, e.loaded/e.total)); };
+    const doc = await task.promise;
+    setProgress(0.98);
     return doc;
   }
 
   async function goTo(n){
-    current = Math.max(1, Math.min(total, n));
-    await renderPage(current);
+    current = clamp(n, 1, total);
+    await renderPage(current, { keepTop:true }); // always show top on first paint
   }
 
-  // Controls
+  // ---------- Controls ----------
   document.getElementById("prev").onclick = ()=>goTo(current-1);
   document.getElementById("next").onclick = ()=>goTo(current+1);
-  document.getElementById("zoom-in").onclick  = ()=>{zoom*=1.2;renderPage(current);};
-  document.getElementById("zoom-out").onclick = ()=>{zoom/=1.2;renderPage(current);};
-  document.getElementById("zoom-fit").onclick = ()=>{zoom=1;renderPage(current);};
+
+  // Toggle Fit (button)
+  btnToggle.onclick = ()=>{
+    const anchor = anchorFromCenter();
+    fitMode = (fitMode === "page") ? "width" : "page";
+    renderPage(current, { anchor });
+  };
+
+  // Double-click to toggle fit (desktop)
+  viewer.addEventListener('dblclick', (e)=>{
+    const anchor = {
+      rx: (viewer.scrollLeft + e.clientX - viewer.getBoundingClientRect().left) / Math.max(1, wrap.clientWidth),
+      ry: (viewer.scrollTop  + e.clientY - viewer.getBoundingClientRect().top ) / Math.max(1, wrap.clientHeight),
+    };
+    fitMode = (fitMode === "page") ? "width" : "page";
+    renderPage(current, { anchor });
+  }, {passive:false});
+
+  // Double-tap to toggle fit (mobile)
+  let lastTap=0;
+  viewer.addEventListener('touchend', (e)=>{
+    const now = Date.now();
+    if (e.changedTouches.length===1 && now-lastTap<300){
+      const rect = viewer.getBoundingClientRect();
+      const t = e.changedTouches[0];
+      const anchor = {
+        rx: (viewer.scrollLeft + (t.clientX-rect.left)) / Math.max(1, wrap.clientWidth),
+        ry: (viewer.scrollTop  + (t.clientY-rect.top )) / Math.max(1, wrap.clientHeight),
+      };
+      fitMode = (fitMode === "page") ? "width" : "page";
+      renderPage(current, { anchor });
+    }
+    lastTap = now;
+  }, {passive:true});
+
+  // Fullscreen (fallback opens PDF)
   document.getElementById("fullscreen").onclick=()=>{
     const el = viewer;
     const req = el.requestFullscreen || el.webkitRequestFullscreen || el.msRequestFullscreen || el.mozRequestFullScreen;
     if (req) req.call(el); else window.open(pdfURL,'_blank','noopener');
   };
 
-  // Keyboard
+  // Keyboard arrows
   window.addEventListener('keydown',(e)=>{
-    if (e.key==="ArrowLeft") goTo(current-1);
-    if (e.key==="ArrowRight") goTo(current+1);
+    if (e.target && /input|textarea|select/i.test(e.target.tagName)) return;
+    if (e.key==="ArrowLeft")  { e.preventDefault(); goTo(current-1); }
+    if (e.key==="ArrowRight") { e.preventDefault(); goTo(current+1); }
   });
 
   // Edge clicks
   edgePrev.onclick=()=>goTo(current-1);
   edgeNext.onclick=()=>goTo(current+1);
 
+  // Resize keeps current fit mode
+  window.addEventListener('resize', ()=>{
+    renderPage(current, { anchor: anchorFromCenter() });
+  });
+
   // Init
   loadPDF(pdfURL).then(doc=>{
     pdfDoc=doc; total=doc.numPages;
-    renderPage(current);
-  }).catch(e=>console.error("PDF load error",e));
+    renderPage(current, { keepTop:true });
+  }).catch(e=>console.error("PDF load error", e));
 })();
 </script>
 </body>
