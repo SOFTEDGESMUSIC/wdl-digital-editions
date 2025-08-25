@@ -1,59 +1,101 @@
+/* WDL minimal PDF viewer — single page, no fullscreen */
+
 :root{
-  --bg:#fff; --fg:#111; --accent:#111;
-  --barH:38px;            /* thinner bar */
-  --barPadV:4px;
-  --barPadH:6px;
-  --btnPadV:4px;
-  --btnPadH:8px;
-  --fontSize:13px;
+  --bg:#fff;
+  --fg:#111;
+  --bar-bg:#fff;
+  --bar-fg:#111;
+  --bar-shadow:0 3px 12px rgba(0,0,0,.06);
+  --bar-gap:.4rem;
+  --bar-pad:.25rem .5rem;
+  --btn-pad:.25rem .5rem;
+  --btn-font:500 14px/1 system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial;
+  --edge-color: rgba(0,0,0,.25);
+  --edge-color-hover: rgba(0,0,0,.4);
+  --progress:#16a34a;
 }
 
-/* Layout */
-html,body{margin:0;height:100%;background:var(--bg);color:var(--fg);font:400 14px/1.4 system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial;}
-#progress{position:fixed;top:0;left:0;height:2px;background:#1a73e8;width:0;z-index:5}
+/* Basic layout */
+html,body{height:100%;margin:0;background:var(--bg);color:var(--fg);}
+#progress{
+  position:fixed;top:0;left:0;height:3px;width:0;background:var(--progress);
+  display:none;z-index:50;
+}
+#progress.active{display:block;}
+
 #viewer{
   position:relative;
-  height:calc(100vh - var(--barH) - 8px);
-  overflow:auto;           /* scroll/pan area */
-  background:#fff;
+  width:100%;
+  height:calc(100vh - 64px); /* leave room for the control bar */
+  overflow:auto;
+  background:var(--bg);
 }
-#pageWrap{ position:relative; margin:0 auto; }   /* canvas centered by width */
-#pageCanvas{ display:block; width:100%; height:auto; background:#fff; }
 
-/* Edge chevrons (clickable next/prev) */
-.edge{
-  position:absolute; top:0; bottom:0; width:14%;
-  display:flex; align-items:center; justify-content:center;
-  color:#bbb; opacity:.0; transition:opacity .15s ease;
-  cursor:pointer; user-select:none;
+#pageWrap{
+  margin:0 auto;           /* center */
+  position:relative;
+  touch-action: pan-x pan-y;
 }
+#pageCanvas{
+  display:block;
+  user-select:none;
+  -webkit-user-select:none;
+}
+
+/* Edge click zones + chevrons */
+.edge{
+  position:absolute; top:0; bottom:0; width:12%;
+  display:flex; align-items:center; justify-content:center;
+  color:var(--edge-color);
+  cursor:pointer; transition: color .15s ease;
+  pointer-events:auto;
+}
+.edge:hover{ color:var(--edge-color-hover); }
 .edge-left{ left:0; }
 .edge-right{ right:0; }
-.edge:hover{ opacity:.65; }
-.chev{ font-size:42px; line-height:1; pointer-events:none; }
+.edge .chev{ font:600 48px/1 "Helvetica Neue", Arial, sans-serif; }
 
-/* Toolbar under viewer */
+/* Controls: slimmer, under the viewer */
 #controls{
-  height:var(--barH);
-  display:flex; align-items:center; justify-content:center; gap:.4rem;
-  padding:var(--barPadV) var(--barPadH);
-  border-top:1px solid #eee;
-  background:#fff; color:#000;
-  border-radius:0;          /* square */
+  position:relative;
+  width:fit-content;
+  margin:.5rem auto .75rem;
+  background:var(--bar-bg);
+  color:var(--bar-fg);
+  box-shadow:var(--bar-shadow);
+  display:flex; align-items:center; gap:var(--bar-gap);
+  padding:var(--bar-pad);
+  border-radius:0;          /* no radius */
 }
-#controls button, #controls a{
-  background:#fff; color:#000; border:1px solid #ddd;
-  padding:var(--btnPadV) var(--btnPadH);
-  border-radius:0; cursor:pointer; text-decoration:none;
-  font-size:var(--fontSize);
+
+#controls button,
+#controls a{
+  background:var(--bar-bg);
+  color:var(--bar-fg);
+  border:0;
+  padding:var(--btn-pad);
+  cursor:pointer;
+  text-decoration:none;
+  font:var(--btn-font);
+  border-radius:0;          /* no radius */
 }
-#controls button:hover, #controls a:hover{ background:#f6f6f6; }
-#page-info{ min-width:70px; text-align:center; }
+#controls button:hover,
+#controls a:hover{
+  background:#f3f3f3;
+}
+
+#page-info{ min-width:4.5rem; text-align:center; font:var(--btn-font); }
 
 /* Mobile tweaks */
-@media (max-width:820px){
-  :root{
-    --barH:36px; --btnPadV:3px; --btnPadH:8px; --fontSize:12px;
+@media (max-width: 840px){
+  #viewer{ height:calc(100vh - 58px); }
+  #controls{
+    gap:.25rem;
+    padding:.2rem .4rem;
   }
-  .chev{ font-size:34px; }
+  #controls button, #controls a{
+    padding:.2rem .4rem;
+    font:500 13px/1 system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial;
+  }
+  .edge .chev{ font-size:40px; }
 }
