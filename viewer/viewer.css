@@ -1,12 +1,12 @@
-/* WDL minimal PDF viewer — single page, capped at Fit Width, no fullscreen */
+/* WDL minimal PDF viewer — single page, fit width (desktop), fit page (mobile), no fullscreen */
 
 :root{
   --bg:#fff;
   --fg:#111;
   --bar-bg:#fff;
   --bar-fg:#111;
-  --barH: 46px;   /* match your control bar’s real height */
-  --barGap: 12px; /* little breathing space above the bar */
+  --barH: 46px;   /* control bar’s height */
+  --barGap: 12px; /* breathing space above the bar */
   --bar-shadow:0 3px 12px rgba(0,0,0,.06);
   --bar-gap:.4rem;
   --bar-pad:.25rem .5rem;      /* slimmer bar */
@@ -39,6 +39,8 @@ html,body{height:100%;margin:0;background:var(--bg);color:var(--fg);}
   #viewer {
     height: calc(100svh - var(--barH) - var(--barGap));
   }
+}
+
 #pageWrap{
   margin:0 auto;                 /* center */
   position:relative;
@@ -63,7 +65,7 @@ html,body{height:100%;margin:0;background:var(--bg);color:var(--fg);}
 .edge-right{ right:0; }
 .edge .chev{ font:600 48px/1 "Helvetica Neue", Arial, sans-serif; }
 
-/* Slimmer control bar, sits under the viewer */
+/* Slim control bar under the viewer */
 #controls{
   position:relative;
   width:fit-content;
@@ -96,7 +98,6 @@ html,body{height:100%;margin:0;background:var(--bg);color:var(--fg);}
 
 /* Mobile tweaks */
 @media (max-width: 840px){
-  #viewer{ height:calc(100vh - 52px); }
   #controls{
     gap:.25rem;
     padding:.2rem .35rem;      /* tighter */
