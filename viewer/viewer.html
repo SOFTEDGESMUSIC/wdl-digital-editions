@@ -3,7 +3,8 @@
 <head>
 <meta charset="utf-8"/>
 <title>WDL Viewer</title>
-<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<!-- Disable browser zoom/gesture to avoid fighting our own zoom on iOS -->
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no"/>
 <link rel="stylesheet" href="viewer.css"/>
 
 <!-- PDF.js (self-hosted) -->
@@ -42,7 +43,6 @@
 <script>
 (() => {
   // ---------- CONFIG ----------
-  // Override via ?pdf=/wdl-digital-editions/editions/Whatever.pdf
   const DEFAULT_PDF = "/wdl-digital-editions/editions/latest.pdf";
   const params = new URLSearchParams(location.search);
   const pdfURL = params.get("pdf") || params.get("file") || DEFAULT_PDF;
@@ -65,6 +65,7 @@
   let minZoom = 1, maxZoom = 1;
   let fitMode = "page";       // "page" or "width"
   let firstRenderDone = false;
+  let baseWidthZoomCached = 1;  // keep latest baseWidthZoom for fast double-tap
 
   const DPR = Math.max(1, window.devicePixelRatio || 1);
   const isMobile = () => matchMedia("(max-width: 840px)").matches;
@@ -94,6 +95,7 @@
     maxZoom = isMobile() ? Math.max(baseWidthZoom, baseWidthZoom * 2) : Math.max(1, baseWidthZoom);
     zoom = Math.min(Math.max(zoom, minZoom), maxZoom);
 
+    baseWidthZoomCached = baseWidthZoom; // update cache for double-tap
     return { fitWhole, baseWidthZoom };
   }
 
@@ -288,21 +290,26 @@
     }
   }, { passive: false });
 
-  // Double-click (desktop) & double-tap (mobile): toggle fit modes
-  function doToggleAtPointer() {
-    // toggleFitMode already anchors to center; keeping it simple
-    toggleFitMode();
-  }
-  viewer.addEventListener('dblclick', (e) => { e.preventDefault(); doToggleAtPointer(); });
+  // Double-click (desktop): toggle fit modes
+  viewer.addEventListener('dblclick', (e) => { e.preventDefault(); toggleFitMode(); });
 
+  // Double-tap (mobile): zoom to a comfortable size; prevent browser double-tap zoom
   let lastTap = 0;
   viewer.addEventListener('touchend', (e) => {
     const now = Date.now();
     if (e.changedTouches.length === 1 && (now - lastTap) < 300) {
-      doToggleAtPointer();
+      e.preventDefault(); // <-- stop browser double-tap zoom
+      const rect = viewer.getBoundingClientRect();
+      const t = e.changedTouches[0];
+      const anchor = { x: t.clientX - rect.left, y: t.clientY - rect.top };
+
+      // Comfortable target: ~1.6× of Fit-Width (cached), capped by mobile max
+      const comfortable = Math.min(maxZoom, Math.max(1, baseWidthZoomCached * 1.6));
+      const target = (Math.abs(zoom - 1) < 0.05) ? comfortable : 1;
+      zoomTo(target, anchor);
     }
     lastTap = now;
-  }, { passive: true });
+  }, { passive: false });
 
   // Resize => re-render keeping center
   window.addEventListener('resize', () => { renderPage(current); });
