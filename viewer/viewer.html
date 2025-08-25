@@ -78,30 +78,24 @@
 
   // Fit computation and bounds
   function computeFit(vp1) {
-    const { vw, vh } = box();
-    const fitWhole = Math.min(vw / vp1.width, vh / vp1.height); // Fit to page (entire page visible)
-    const fitWidth = vw / vp1.width;                            // Fit to width
+  const { vw, vh } = box();
+  const fitWhole = Math.min(vw / vp1.width, vh / vp1.height);
+  const fitWidth = vw / vp1.width;
+  const baseWidthZoom = fitWidth / fitWhole;
 
-    // Default mode: desktop = width, mobile = page
-    if (!firstRenderDone) {
-      fitMode = isMobile() ? "page" : "width";
-      zoom = (fitMode === "width") ? (fitWidth / fitWhole) : 1;
-    }
-
-    // Bounds:
-    // Desktop: don't go beyond fit-width
-    // Mobile: allow up to 2x beyond fit-width
-    const baseWidthZoom = fitWidth / fitWhole;
-    const mobileMax = baseWidthZoom * 2.0;
-    minZoom = 1;
-    maxZoom = isMobile() ? Math.max(baseWidthZoom, mobileMax) : Math.max(1, baseWidthZoom);
-
-    // Clamp zoom into new bounds
-    zoom = Math.min(Math.max(zoom, minZoom), maxZoom);
-
-    return { fitWhole, baseWidthZoom };
+  // 👇 First render default: desktop = width, mobile = page
+  if (!firstRenderDone) {
+    fitMode = isMobile() ? "page" : "width";
+    zoom = (fitMode === "width") ? baseWidthZoom : 1;
   }
 
+  // Bounds (desktop caps at fit-width; mobile allows 2× beyond)
+  minZoom = 1;
+  maxZoom = isMobile() ? Math.max(baseWidthZoom, baseWidthZoom * 2) : Math.max(1, baseWidthZoom);
+  zoom = Math.min(Math.max(zoom, minZoom), maxZoom);
+
+  return { fitWhole, baseWidthZoom };
+}
   async function renderPage(num, anchor) {
     const page = await pdfDoc.getPage(num);
     const vp1  = page.getViewport({ scale: 1 });
