@@ -1,4 +1,4 @@
-/* WDL minimal PDF viewer — single page, no fullscreen */
+/* WDL minimal PDF viewer — single page, capped at Fit Width, no fullscreen */
 
 :root{
   --bg:#fff;
@@ -7,34 +7,36 @@
   --bar-fg:#111;
   --bar-shadow:0 3px 12px rgba(0,0,0,.06);
   --bar-gap:.4rem;
-  --bar-pad:.25rem .5rem;
+  --bar-pad:.25rem .5rem;      /* slimmer bar */
   --btn-pad:.25rem .5rem;
-  --btn-font:500 14px/1 system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial;
+  --btn-font:500 14px/1 system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial;
   --edge-color: rgba(0,0,0,.25);
   --edge-color-hover: rgba(0,0,0,.4);
   --progress:#16a34a;
 }
 
-/* Basic layout */
 html,body{height:100%;margin:0;background:var(--bg);color:var(--fg);}
+
+/* Top loading bar */
 #progress{
   position:fixed;top:0;left:0;height:3px;width:0;background:var(--progress);
   display:none;z-index:50;
 }
 #progress.active{display:block;}
 
+/* Viewer fills the window except the bar below */
 #viewer{
   position:relative;
   width:100%;
-  height:calc(100vh - 64px); /* leave room for the control bar */
+  height:calc(100vh - 58px); /* leave room for the control bar */
   overflow:auto;
   background:var(--bg);
 }
 
 #pageWrap{
-  margin:0 auto;           /* center */
+  margin:0 auto;                 /* center */
   position:relative;
-  touch-action: pan-x pan-y;
+  touch-action: pan-x pan-y;     /* allow panning */
 }
 #pageCanvas{
   display:block;
@@ -42,7 +44,7 @@ html,body{height:100%;margin:0;background:var(--bg);color:var(--fg);}
   -webkit-user-select:none;
 }
 
-/* Edge click zones + chevrons */
+/* Edge click zones (+ light grey chevrons) to change page */
 .edge{
   position:absolute; top:0; bottom:0; width:12%;
   display:flex; align-items:center; justify-content:center;
@@ -55,7 +57,7 @@ html,body{height:100%;margin:0;background:var(--bg);color:var(--fg);}
 .edge-right{ right:0; }
 .edge .chev{ font:600 48px/1 "Helvetica Neue", Arial, sans-serif; }
 
-/* Controls: slimmer, under the viewer */
+/* Slimmer control bar, sits under the viewer */
 #controls{
   position:relative;
   width:fit-content;
@@ -65,7 +67,7 @@ html,body{height:100%;margin:0;background:var(--bg);color:var(--fg);}
   box-shadow:var(--bar-shadow);
   display:flex; align-items:center; gap:var(--bar-gap);
   padding:var(--bar-pad);
-  border-radius:0;          /* no radius */
+  border-radius:0;               /* 0px radius */
 }
 
 #controls button,
@@ -77,7 +79,7 @@ html,body{height:100%;margin:0;background:var(--bg);color:var(--fg);}
   cursor:pointer;
   text-decoration:none;
   font:var(--btn-font);
-  border-radius:0;          /* no radius */
+  border-radius:0;               /* 0px radius */
 }
 #controls button:hover,
 #controls a:hover{
@@ -88,13 +90,13 @@ html,body{height:100%;margin:0;background:var(--bg);color:var(--fg);}
 
 /* Mobile tweaks */
 @media (max-width: 840px){
-  #viewer{ height:calc(100vh - 58px); }
+  #viewer{ height:calc(100vh - 52px); }
   #controls{
     gap:.25rem;
-    padding:.2rem .4rem;
+    padding:.2rem .35rem;      /* tighter */
   }
   #controls button, #controls a{
-    padding:.2rem .4rem;
+    padding:.2rem .35rem;
     font:500 13px/1 system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial;
   }
   .edge .chev{ font-size:40px; }
