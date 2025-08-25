@@ -189,20 +189,23 @@
   edgePrev.addEventListener('click', ()=>goTo(current-1));
   edgeNext.addEventListener('click', ()=>goTo(current+1));
 
-  // -------- Robust mobile zoom & pan --------
-  // Pointer Events (modern iOS/Android/Chrome)
+  <script>
+  // -------- Robust mobile zoom & pan (fixed so edge clicks work) --------
   const active = new Map(); // pointerId -> {x,y}
   let startDist=0, startZoom=1, anchorPE=null;
   let panning=false, panId=null, panStart={x:0,y:0}, panScroll={l:0,t:0};
 
-  function pePoint(e){ return { x:e.clientX, y:e.clientY }; }
-  function peDist(a,b){ const dx=a.x-b.x, dy=a.y-b.y; return Math.hypot(dx,dy); }
-  function peMid(a,b,rect){ return { x:((a.x+b.x)/2 - rect.left), y:((a.y+b.y)/2 - rect.top) }; }
+  const pePoint = e => ({ x:e.clientX, y:e.clientY });
+  const peDist  = (a,b) => Math.hypot(a.x-b.x, a.y-b.y);
+  const peMid   = (a,b,rect) => ({ x:((a.x+b.x)/2 - rect.left), y:((a.y+b.y)/2 - rect.top) });
 
   function onPointerDown(e){
-    viewer.setPointerCapture && viewer.setPointerCapture(e.pointerId);
+    // Let clicks on toolbar or chevrons behave normally
+    if (e.target.closest('#controls') || e.target.closest('.edge')) return;
+
     active.set(e.pointerId, pePoint(e));
 
+    // Start pinch
     if (active.size === 2){
       const pts = Array.from(active.values());
       const rect = viewer.getBoundingClientRect();
@@ -210,18 +213,26 @@
       startZoom = zoom;
       anchorPE  = peMid(pts[0], pts[1], rect);
       panning   = false; panId=null;
-    } else if (active.size === 1 && zoom>minZoom){
+      e.preventDefault(); // only when we really handle a gesture
+      return;
+    }
+
+    // Start pan only if zoomed in
+    if (active.size === 1 && zoom > minZoom){
       panning = true; panId = e.pointerId;
       panStart = pePoint(e);
       panScroll = { l: viewer.scrollLeft, t: viewer.scrollTop };
+      // capture only while panning, to avoid killing clicks elsewhere
+      if (viewer.setPointerCapture) viewer.setPointerCapture(e.pointerId);
+      e.preventDefault();
     }
-    e.preventDefault();
   }
 
   function onPointerMove(e){
     if (!active.has(e.pointerId)) return;
     active.set(e.pointerId, pePoint(e));
 
+    // Pinch zoom
     if (active.size === 2 && startDist>0){
       const pts = Array.from(active.values());
       const d = peDist(pts[0], pts[1]);
@@ -230,6 +241,8 @@
       e.preventDefault();
       return;
     }
+
+    // Pan
     if (panning && e.pointerId === panId){
       const pt = pePoint(e);
       viewer.scrollLeft = panScroll.l - (pt.x - panStart.x);
@@ -242,6 +255,7 @@
     active.delete(e.pointerId);
     if (active.size < 2){ startDist=0; anchorPE=null; }
     if (e.pointerId === panId){ panning=false; panId=null; }
+    // do NOT preventDefault here—allows edge clicks to fire
   }
 
   viewer.addEventListener('pointerdown', onPointerDown, {passive:false});
@@ -261,7 +275,7 @@
     }
   }, {passive:false});
 
-  // Legacy Touch fallback (older Safari)
+  // Double-tap zoom fallback
   let lastTap=0;
   viewer.addEventListener('touchend', (e)=>{
     const now = Date.now();
@@ -274,37 +288,6 @@
     }
     lastTap = now;
   }, {passive:true});
-
-  // Safari gesture* fallback (inside iframes on iOS)
-  let gStart=1, gZoomStart=1, gAnchor=null;
-  window.addEventListener('gesturestart', (e)=>{
-    const rect = viewer.getBoundingClientRect();
-    gStart = e.scale || 1; gZoomStart = zoom;
-    gAnchor = { x: rect.width/2, y: rect.height/2 };
-  }, {passive:true});
-  window.addEventListener('gesturechange', (e)=>{
-    if (!gAnchor) return;
-    e.preventDefault();
-    const factor = (e.scale || 1) / gStart;
-    zoomTo(gZoomStart * factor, gAnchor);
-  }, {passive:false});
-  window.addEventListener('gestureend', ()=>{ gAnchor=null; }, {passive:true});
-
-  // Resize keeps current zoom target within bounds
-  window.addEventListener('resize', ()=>renderPage(current));
-
-  // ---------- Boot ----------
-  (async function(){
-    try{
-      pdfDoc = await loadPDF(pdfURL);
-      total  = pdfDoc.numPages;
-      await renderPage(current);
-    }catch(err){
-      console.error('PDF load error', err);
-      setProgress(1);
-    }
-  })();
-})();
 </script>
 </body>
 </html>
