@@ -1,5 +1,45 @@
-name: Build latest teaser image
+      - name: Render first page to PNG(s) with debug
+        run: |
+          echo "Listing current working directory:"
+          pwd
+          ls -R
 
+          echo "Checking editions/latest.pdf..."
+          if [ ! -f editions/latest.pdf ]; then
+            echo "ERROR: editions/latest.pdf not found"
+            exit 1
+          fi
+
+          ls -lh editions/latest.pdf
+
+          echo "Rendering at 1200px..."
+          pdftoppm -png -f 1 -l 1 -scale-to 1200 editions/latest.pdf editions/latest-teaser-1200 || { echo "pdftoppm 1200 failed"; exit 1; }
+          ls -l editions/latest-teaser-1200*.png || echo "No 1200px PNG produced"
+
+          echo "Rendering at 2000px..."
+          pdftoppm -png -f 1 -l 1 -scale-to 2000 editions/latest.pdf editions/latest-teaser-2000 || { echo "pdftoppm 2000 failed"; exit 1; }
+          ls -l editions/latest-teaser-2000*.png || echo "No 2000px PNG produced"
+
+          echo "Renaming outputs..."
+          if [ -f editions/latest-teaser-1200-1.png ]; then
+            mv editions/latest-teaser-1200-1.png editions/latest-teaser-1200.png
+          else
+            echo "1200 PNG not found to rename"
+            exit 1
+          fi
+          if [ -f editions/latest-teaser-2000-1.png ]; then
+            mv editions/latest-teaser-2000-1.png editions/latest-teaser-2000.png
+          else
+            echo "2000 PNG not found to rename"
+            exit 1
+          fi
+
+          echo "Optimizing..."
+          pngquant --force --output editions/latest-teaser-1200.png editions/latest-teaser-1200.png
+          pngquant --force --output editions/latest-teaser-2000.png editions/latest-teaser-2000.png
+
+          echo "Generated teaser images:"
+          ls -lh editions/latest-teaser-*.png
 on:
   push:
     paths:
