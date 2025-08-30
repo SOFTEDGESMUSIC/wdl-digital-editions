@@ -4,10 +4,10 @@ on:
   push:
     paths:
       - 'editions/latest.pdf'        # run when latest.pdf changes
-  workflow_dispatch:                 # allow manual runs from Actions tab
+  workflow_dispatch:                 # enables the "Run workflow" button
 
 permissions:
-  contents: write                    # needed to commit PNGs back to the repo
+  contents: write                    # allow the job to commit PNGs back
 
 jobs:
   render:
@@ -21,29 +21,30 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y poppler-utils pngquant
 
-- name: Render first page to PNG(s) with debug
-  run: |
-    echo "CWD:" && pwd
-    ls -R
+      - name: Render first page to PNG(s)
+        run: |
+          set -e
+          echo "CWD:" && pwd
+          echo "Tree:" && ls -R
 
-    echo "Checking editions/latest.pdf..."
-    [ -f editions/latest.pdf ] || { echo "latest.pdf not found"; exit 1; }
-    ls -lh editions/latest.pdf
+          echo "Checking editions/latest.pdf..."
+          [ -f editions/latest.pdf ] || { echo "latest.pdf not found"; exit 1; }
+          ls -lh editions/latest.pdf
 
-    echo "Rendering 1200px (singlefile)..."
-    pdftoppm -png -singlefile -f 1 -l 1 -scale-to 1200 editions/latest.pdf editions/latest-teaser-1200
-    ls -l editions/latest-teaser-1200.png || { echo "No 1200px PNG produced"; exit 1; }
+          echo "Rendering 1200px (singlefile)..."
+          pdftoppm -png -singlefile -f 1 -l 1 -scale-to 1200 editions/latest.pdf editions/latest-teaser-1200
+          ls -l editions/latest-teaser-1200.png || { echo "No 1200px PNG produced"; exit 1; }
 
-    echo "Rendering 2000px (singlefile)..."
-    pdftoppm -png -singlefile -f 1 -l 1 -scale-to 2000 editions/latest.pdf editions/latest-teaser-2000
-    ls -l editions/latest-teaser-2000.png || { echo "No 2000px PNG produced"; exit 1; }
+          echo "Rendering 2000px (singlefile)..."
+          pdftoppm -png -singlefile -f 1 -l 1 -scale-to 2000 editions/latest.pdf editions/latest-teaser-2000
+          ls -l editions/latest-teaser-2000.png || { echo "No 2000px PNG produced"; exit 1; }
 
-    echo "Optimizing..."
-    pngquant --force --output editions/latest-teaser-1200.png editions/latest-teaser-1200.png
-    pngquant --force --output editions/latest-teaser-2000.png editions/latest-teaser-2000.png
+          echo "Optimizing..."
+          pngquant --force --output editions/latest-teaser-1200.png editions/latest-teaser-1200.png
+          pngquant --force --output editions/latest-teaser-2000.png editions/latest-teaser-2000.png
 
-    echo "Final files:"
-    ls -lh editions/latest-teaser-*.png
+          echo "Final files:"
+          ls -lh editions/latest-teaser-*.png
 
       - name: Commit teaser image(s)
         uses: stefanzweifel/git-auto-commit-action@v5
