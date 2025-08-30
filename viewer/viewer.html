@@ -29,14 +29,11 @@
   <span id="page-info" aria-live="polite">1 / ?</span>
   <button id="next"      title="Next page" aria-label="Next page">⟩</button>
 
-  <!-- (Desktop can still use +/-; on mobile they’re hidden in CSS) -->
   <button id="zoom-out"  title="Zoom out" aria-label="Zoom out">−</button>
   <button id="zoom-in"   title="Zoom in"  aria-label="Zoom in">+</button>
 
-  <!-- Toggle Fit/Page Width — icon only (no text) -->
   <button id="zoom-toggle" title="Toggle Fit/Page Width" aria-label="Toggle Fit ↔ Width">↔</button>
 
-  <!-- Open PDF in a new tab (down arrow) -->
   <a id="openpdf" title="Open PDF in new tab" target="_blank" rel="noopener" aria-label="Open PDF">⬇</a>
 </div>
 
@@ -46,6 +43,11 @@
   const DEFAULT_PDF = "/wdl-digital-editions/editions/latest.pdf";
   const params = new URLSearchParams(location.search);
   const pdfURL = params.get("pdf") || params.get("file") || DEFAULT_PDF;
+
+  // NEW: parse hash for zoom mode
+  let startFitMode = null;
+  if (location.hash.includes("page-fit")) startFitMode = "page";
+  if (location.hash.includes("page-width")) startFitMode = "width";
 
   // ---------- ELEMENTS ----------
   const viewer   = document.getElementById("viewer");
@@ -61,9 +63,9 @@
 
   // ---------- STATE ----------
   let pdfDoc = null, current = 1, total = 0;
-  let zoom = 1;               // multiplier on fit-to-page scale
+  let zoom = 1;
   let minZoom = 1, maxZoom = 1;
-  let fitMode = "page";       // "page" or "width"
+  let fitMode = "page";   // "page" or "width"
   let firstRenderDone = false;
 
   const DPR = Math.max(1, window.devicePixelRatio || 1);
@@ -82,13 +84,17 @@
     const fitWidth = vw / vp1.width;
     const baseWidthZoom = fitWidth / fitWhole;
 
-    // initial modes: desktop = width; mobile = page
+    // initial modes: allow override from startFitMode
     if (!firstRenderDone) {
-      fitMode = isMobile() ? "page" : "width";
+      if (startFitMode) {
+        fitMode = startFitMode;
+      } else {
+        fitMode = isMobile() ? "page" : "width";
+      }
       zoom = (fitMode === "width") ? baseWidthZoom : 1;
     }
 
-    // bounds: desktop capped at fit-width; mobile allows 2x beyond
+    // bounds
     minZoom = 1;
     maxZoom = isMobile() ? Math.max(baseWidthZoom, baseWidthZoom * 2) : Math.max(1, baseWidthZoom);
     zoom = Math.min(Math.max(zoom, minZoom), maxZoom);
@@ -106,23 +112,18 @@
     const cssW = Math.floor(vp.width);
     const cssH = Math.floor(vp.height);
 
-    // preserve center/anchor
     let rx = (viewer.scrollLeft + viewer.clientWidth / 2) / Math.max(1, wrap.clientWidth);
     let ry = (viewer.scrollTop  + viewer.clientHeight / 2) / Math.max(1, wrap.clientHeight);
 
-    // first render or page change: anchor to TOP-CENTER
     if (!firstRenderDone || anchor === "top-center") { rx = 0.5; ry = 0.0; }
-    // custom anchor
     if (anchor && typeof anchor.rx === "number") rx = anchor.rx;
     if (anchor && typeof anchor.ry === "number") ry = anchor.ry;
 
-    // size canvas (CSS)
     canvas.style.width  = cssW + "px";
     canvas.style.height = cssH + "px";
     wrap.style.width    = cssW + "px";
     wrap.style.height   = cssH + "px";
 
-    // Hi-DPI size and WHITE CLEAR (prevents black corner flash)
     const out = DPR;
     canvas.width  = Math.floor(cssW * out);
     canvas.height = Math.floor(cssH * out);
@@ -140,7 +141,6 @@
     }).promise;
     setProgress(1);
 
-    // restore scroll to center/anchor
     const newW = wrap.clientWidth, newH = wrap.clientHeight;
     viewer.scrollLeft = Math.max(0, rx * newW - viewer.clientWidth / 2);
     viewer.scrollTop  = Math.max(0, ry * newH - viewer.clientHeight / 2);
@@ -195,23 +195,19 @@
   document.getElementById('zoom-out').onclick  = () => zoomTo(zoom / 1.2, { x: viewer.clientWidth / 2, y: viewer.clientHeight / 2 });
   document.getElementById('zoom-toggle').onclick = () => { toggleFitMode(); };
 
-  // Keyboard arrows turn pages
   window.addEventListener('keydown', (e) => {
     if (e.target && /input|textarea|select/i.test(e.target.tagName)) return;
     if (e.key === 'ArrowLeft')  { e.preventDefault(); goTo(current - 1); }
     if (e.key === 'ArrowRight') { e.preventDefault(); goTo(current + 1); }
   });
 
-  // Edge clicks turn pages
   edgePrev.addEventListener('click', () => goTo(current - 1));
   edgeNext.addEventListener('click', () => goTo(current + 1));
 
-  // --- MOBILE: double-tap only (no pinch zoom) ---
   let lastTap = 0;
   viewer.addEventListener('touchend', (e) => {
     const now = Date.now();
     if (e.changedTouches.length === 1 && (now - lastTap) < 300) {
-      // toggle between Fit-Page (1x) and 2x
       const target = (Math.abs(zoom - 1) < 0.05) ? Math.min(2, maxZoom) : 1;
       const rect = viewer.getBoundingClientRect();
       const t = e.changedTouches[0];
@@ -220,10 +216,8 @@
     lastTap = now;
   }, { passive:true });
 
-  // Prevent iOS Safari double-tap zoom from the browser
   document.addEventListener('gesturestart', e => e.preventDefault());
 
-  // Desktop wheel-pinch left as-is? You asked to drop pinch for mobile only, so we keep desktop ctrl+wheel.
   viewer.addEventListener('wheel', (e) => {
     if (e.ctrlKey && !isMobile()) {
       e.preventDefault();
@@ -234,7 +228,6 @@
     }
   }, { passive:false });
 
-  // Resize ⇒ re-render keeping center
   window.addEventListener('resize', () => { renderPage(current); });
 
   // ---------- Boot ----------
