@@ -8,9 +8,21 @@
     html, body { margin:0; padding:0; background:#fff; }
     .wrap { max-width: 900px; margin: 0 auto; }
     a.teaser-link { display:block; text-decoration:none; outline:0; }
-    #preview { width:100%; height:auto; display:block; }
-    .cta { text-align:center; font:16px/1.4 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif; margin:8px 0 16px; }
-    .cta a { color:#000; text-decoration:underline; }
+   /* Responsive fixed aspect ratio (A4 style ~1:1.414) */
+.ratio-box {
+  position: relative;
+  width: 100%;
+  padding-top: 141.4%; /* height = width × 1.414 (A4 proportion) */
+  overflow: hidden;
+}
+
+.ratio-box canvas {
+  position: absolute;
+  top: 0; left: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+}
   </style>
 </head>
 <body>
