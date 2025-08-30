@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>WDL – Teaser</title>
+  <style>
+    html, body { margin:0; padding:0; background:#fff; }
+    .wrap { max-width: 900px; margin: 0 auto; }
+    a.teaser-link { display:block; text-decoration:none; outline:0; }
+    #preview { width:100%; height:auto; display:block; }
+    .cta { text-align:center; font: 16px/1.4 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif; margin:8px 0 16px; }
+    .cta a { color:#000; text-decoration:underline; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <!-- The whole canvas is a link to your paywalled page -->
+    <a class="teaser-link" id="teaserLink" href="#" target="_blank" rel="noopener">
+      <canvas id="preview"></canvas>
+    </a>
+    <div class="cta">
+      <a id="ctaLink" href="#" target="_blank" rel="noopener">Read the full edition</a>
+    </div>
+  </div>
+
+  <!-- PDF.js (already in your repo) -->
+  <script src="../lib/pdfjs/pdf.min.js"></script>
+  <script>
+    // ---- CONFIG ----
+    const PDF_URL = "../editions/latest.pdf";               // always the newest issue
+    const PAYWALL_URL = "https://YOUR-SITE.com/full-edition"; // <— change to your paywalled URL
+    const MAX_WIDTH = 900; // px cap for the teaser width
+
+    // Link targets
+    document.getElementById('teaserLink').href = PAYWALL_URL;
+    document.getElementById('ctaLink').href = PAYWALL_URL;
+
+    // Render page 1 only, no controls
+    const canvas = document.getElementById('preview');
+    const ctx = canvas.getContext('2d');
+
+    // PDF.js worker (already in your repo)
+    pdfjsLib.GlobalWorkerOptions.workerSrc = "../lib/pdfjs/pdf.worker.min.js";
+
+    pdfjsLib.getDocument(PDF_URL).promise.then(async (pdf) => {
+      const page = await pdf.getPage(1);
+
+      // Fit to container width (up to MAX_WIDTH)
+      const containerWidth = Math.min(window.innerWidth, MAX_WIDTH);
+      const unscaledViewport = page.getViewport({ scale: 1.0 });
+      const scale = containerWidth / unscaledViewport.width;
+      const viewport = page.getViewport({ scale });
+
+      canvas.width = viewport.width;
+      canvas.height = viewport.height;
+
+      await page.render({ canvasContext: ctx, viewport }).promise;
+    });
+
+    // Optional: rerender on resize (lightweight debounce)
+    let t;
+    window.addEventListener('resize', () => {
+      clearTimeout(t);
+      t = setTimeout(() => location.reload(), 200);
+    });
+  </script>
+</body>
+</html>
